@@ -171,6 +171,11 @@ td:nth-child(2),th:nth-child(2){text-align:left}
 .pl-badge.ok{color:var(--green)}.pl-badge.rev{color:#fbbf24}.pl-badge.pend{color:#fb923c}
 .modal.narrow{width:min(640px,100%)}
 .pre-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.viewer-bar{background:rgba(96,165,250,.12);border-bottom:1px solid var(--line);color:var(--blue);text-align:center;font-size:13px;padding:7px 12px}
+.viewer main button:not(.tab),.viewer main label.btn,.viewer .pre-actions,.viewer .slot-btns,.viewer main input[type=file],.viewer .pform div:has(input[type=file]){display:none !important}
+.viewer #nav a[data-r="iniciar"]{display:none}
+.viewer input:disabled,.viewer select:disabled{opacity:1;-webkit-text-fill-color:var(--text);cursor:default}
+.viewer .status-slot{border-style:solid}
 /* Modal */
 .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:9000;display:flex;align-items:center;justify-content:center;padding:12px}
 .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(980px,100%);max-height:94vh;overflow:auto;padding:20px;position:relative}
@@ -231,6 +236,7 @@ div.ocr{font-size:13px;margin-top:8px;min-height:18px;color:var(--gold)}
   <a class="link" data-r="estatisticas" href="#/estatisticas">📈 Estatísticas</a>
 </nav>
 
+<div id="viewerBar" class="viewer-bar" style="display:none"></div>
 <main id="app"></main>
 <div class="toast" id="toast"></div>
 
@@ -281,7 +287,9 @@ let currentRoute = '';
 let statsTab = 'liga';
 let lastChamp = null;
 
+let VIEWER=false, VIEWER_AT='';
 function save(){
+  if(VIEWER) return true;
   try{ localStorage.setItem(KEY, JSON.stringify(S)); return true; }
   catch(e){ toast('Não foi possível salvar neste navegador.'); return false; }
 }
@@ -718,7 +726,8 @@ function pageSetup(){
     </div>
     <div class="draw-box" id="drawBox"></div>
   </section>
-  ${S.started?`<section class="panel"><h2>🎲 Sequência sorteada</h2>${fixturesPreview()}</section>`:''}`;
+  ${S.started?`<section class="panel"><h2>🎲 Sequência sorteada</h2>${fixturesPreview()}</section>`:''}
+  ${backupPanel()}`;
 }
 
 function startLeague(){
@@ -805,6 +814,7 @@ function pageLiga(){
     <h2>💾 Campeonato</h2>
     <div class="buttons" style="margin-top:0">
       <button class="blue" onclick="saveData()">💾 Salvar campeonato</button>
+      <button class="ghost" onclick="exportPublish()">🌐 Gerar arquivo para a galera</button>
       <a class="btn ghost" href="#/iniciar">🎲 Sorteio e times</a>
       <button class="danger" onclick="resetAll()">🔄 Reiniciar campeonato</button>
     </div>
@@ -1257,15 +1267,78 @@ function showChampion(id){
   }
 }
 
+
+/* ---------- Backup, publicação e modo acompanhamento ---------- */
+function buildExport(kind){
+  const images={};
+  Object.keys(IMG).forEach(k=>{
+    if(kind==='full') images[k]=IMG[k];
+    else if(/^(logo_|status_)/.test(k)) images[k]=IMG[k];
+    else if(/^pre_/.test(k)) images[k]='data:,';
+  });
+  return {app:'liga-jhow-jhow',version:2,kind,exportedAt:new Date().toISOString(),state:S,images};
+}
+function downloadJSON(name,obj){
+  const blob=new Blob([JSON.stringify(obj)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },800);
+}
+function exportBackup(){ downloadJSON('backup-liga-jhow-'+new Date().toISOString().slice(0,10)+'.json',buildExport('full')); toast('Backup completo baixado.'); }
+function exportPublish(){ downloadJSON('dados-liga.json',buildExport('publish')); toast('Baixado: dados-liga.json. Envie esse arquivo para o GitHub.'); }
+function validExport(d){ return d&&d.app==='liga-jhow-jhow'&&d.state&&Array.isArray(d.state.parts)&&d.state.parts.length===5; }
+async function importBackup(ev){
+  const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
+  try{
+    const d=JSON.parse(await f.text());
+    if(!validExport(d)) throw new Error('arquivo inválido');
+    if(!confirm('Restaurar vai substituir TODOS os dados atuais deste navegador. Continuar?')) return;
+    idbClear(); Object.keys(IMG).forEach(k=>delete IMG[k]);
+    S=Object.assign(emptyState(),d.state);
+    Object.entries(d.images||{}).forEach(([k,v])=>{ if(v&&v!=='data:,') setImg(k,v); });
+    lastChamp=null; save(); toast('Dados restaurados.'); route(true);
+  }catch(e){ toast('Não consegui ler esse arquivo de backup.'); }
+}
+async function tryViewer(){
+  if(!/^https?:/.test(location.protocol)||/[?&]admin\b/.test(location.search)) return false;
+  try{
+    const r=await fetch('dados-liga.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return false;
+    const d=await r.json(); if(!validExport(d)) return false;
+    S=Object.assign(emptyState(),d.state);
+    Object.keys(IMG).forEach(k=>delete IMG[k]); Object.assign(IMG,d.images||{});
+    VIEWER=true; VIEWER_AT=d.exportedAt||''; return true;
+  }catch(e){ return false; }
+}
+function enterViewer(){
+  document.body.classList.add('viewer');
+  const bar=document.getElementById('viewerBar'); bar.style.display='block';
+  let when=''; try{ when=VIEWER_AT?new Date(VIEWER_AT).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):''; }catch(e){}
+  bar.textContent='👀 Modo acompanhamento — só leitura'+(when?' • atualizado em '+when:'');
+}
+function backupPanel(){
+  return `<section class="panel">
+    <h2>💾 Backup e publicação</h2>
+    <div class="info">Os dados da liga ficam <strong>só neste navegador</strong>. Faça backup de vez em quando e, para a galera acompanhar pelo link, gere o arquivo de publicação.</div>
+    <div class="buttons" style="margin-top:0">
+      <button onclick="exportBackup()">💾 Baixar backup completo</button>
+      <label class="btn ghost" style="cursor:pointer">📂 Restaurar backup<input type="file" accept="application/json,.json" style="display:none" onchange="importBackup(event)"></label>
+      <button class="btn blue" onclick="exportPublish()">🌐 Gerar arquivo para a galera (dados-liga.json)</button>
+    </div>
+    <p class="small" style="margin-top:12px">O arquivo para a galera leva logos, imagens de status, placares e estatísticas, mas <strong>não</strong> as imagens de resumo de partida (ficam só no backup completo).</p>
+  </section>`;
+}
+
 /* ---------- Roteador ---------- */
 const ROUTES={'':pageHome,'iniciar':pageSetup,'liga':pageLiga,'participantes':pageParts,'estatisticas':pageStats};
 function route(keepScroll){
   const h=(location.hash||'#/').replace(/^#\/?/,'');
   const prev=currentRoute;
   currentRoute = ROUTES.hasOwnProperty(h) ? h : '';
+  if(VIEWER&&currentRoute==='iniciar') currentRoute='liga';
   const y=window.scrollY;
   document.getElementById('app').innerHTML=ROUTES[currentRoute]();
   document.querySelectorAll('#nav a.link').forEach(a=>a.classList.toggle('active',a.dataset.r===currentRoute));
+  if(VIEWER) document.querySelectorAll('#app input,#app select').forEach(e=>{ e.disabled=true; });
   if(currentRoute==='liga') refreshDerived();
   if(keepScroll===true && prev===currentRoute) window.scrollTo(0,y); else window.scrollTo(0,0);
 }
@@ -1274,7 +1347,8 @@ window.addEventListener('hashchange',()=>route());
 /* ---------- Inicialização ---------- */
 (async function init(){
   document.getElementById('navLogo').src=LOGO;
-  await idbOpen(); await idbLoadAll();
+  if(await tryViewer()) enterViewer();
+  else { await idbOpen(); await idbLoadAll(); }
   route();
 })();
 </script>
