@@ -81,11 +81,23 @@ td:nth-child(2),th:nth-child(2){text-align:left}
 .position{font-weight:bold}
 .qualified{background:rgba(37,99,235,.14)}
 .eliminated{background:rgba(220,38,38,.10)}
-.sticky{padding:12px 16px;box-shadow:0 6px 18px rgba(0,0,0,.5)}
-@media (min-width:751px){.sticky{position:sticky;top:57px;z-index:50}}
-.sticky h2{margin:0 0 8px;font-size:20px}
-.sticky th,.sticky td{padding:6px 8px;font-size:15px}
-.sticky p{margin:6px 0 0}
+.sticky{padding:12px 16px}
+.live-bar{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;margin-bottom:20px}
+.live-bar .lb-center{grid-column:1/-1;order:-1}
+.live-bar .panel{margin-bottom:0;padding:10px 12px}
+.live-bar h2,.live-bar h3{font-size:15px;margin:0 0 6px;text-align:center}
+.live-bar table{min-width:0;width:100%}
+.live-bar th,.live-bar td{padding:5px 5px;font-size:13px}
+.live-bar .lb-side td:nth-child(2),.live-bar .lb-side th:nth-child(2){text-align:left}
+.live-bar .standings-team{gap:7px}
+.live-bar .slogo{width:20px;height:20px;flex-basis:20px}
+.live-bar p.small{margin:6px 0 0;font-size:11px;line-height:1.3}
+@media (min-width:1100px){
+  .live-bar{position:sticky;top:55px;z-index:50;background:var(--bg);padding:6px 0 8px;box-shadow:0 8px 14px -6px rgba(0,0,0,.7);
+    width:min(1360px,calc(100vw - 32px));margin-left:calc((100% - min(1360px,calc(100vw - 32px)))/2);
+    grid-template-columns:minmax(210px,1fr) minmax(0,2.5fr) minmax(210px,1fr)}
+  .live-bar .lb-center{grid-column:auto;order:0}
+}
 .standings-team{display:flex;align-items:center;gap:10px}
 .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .stats-card{border:1px solid var(--line);border-radius:10px;padding:15px;overflow:auto}
@@ -749,7 +761,7 @@ function pageSetup(){
     <h2>🚀 Iniciar a Liga Jhow-Jhow 2026</h2>
     ${S.started
       ? `<div class="info">✅ A liga já foi iniciada. Você pode ajustar nomes e logos abaixo sem perder resultados. Refazer o sorteio <strong>apaga placares e resumos</strong>.</div>`
-      : `<div class="info"><strong>Passo 1:</strong> cadastre os 5 participantes e, se quiser, a logo do time de cada um. <strong>Passo 2:</strong> clique em sortear — o site define a sequência de jogos e quem joga em casa.</div>`}
+      : ''}
     <div class="team-config">${S.parts.map((_,i)=>teamBox(i)).join('')}</div>
     <div class="buttons">
       <button onclick="startLeague()">🎲 ${S.started?'Refazer sorteio':'Sortear jogos e iniciar a liga'}</button>
@@ -853,27 +865,26 @@ function pageLiga(){
     <div id="status" class="status">Os resultados são salvos automaticamente a cada alteração.</div>
   </section>
 
-  <section class="panel sticky">
-    <h2>📊 Classificação</h2>
-    <div class="table-wrap"><table><thead><tr>
-      <th>#</th><th>Jogador</th><th>J</th><th>V</th><th>E</th><th>D</th><th>GP</th><th>GC</th><th>SG</th><th>Pts</th>
-    </tr></thead><tbody id="standings"></tbody></table></div>
-    <p class="small">Desempate: Pontos → Confronto direto → Saldo de gols → Gols marcados → Vitórias.</p>
-  </section>
-
-  <section class="panel">
-    <h2>🏅 Destaques Individuais</h2>
-    <div class="stats-grid">
-      <div class="stats-card"><h3>⚽ Artilharia</h3>
-        <table><thead><tr><th>#</th><th>Time</th><th>Gols</th></tr></thead><tbody id="topScorers"></tbody></table></div>
-      <div class="stats-card"><h3>🧤 Menos Gols Sofridos</h3>
-        <table><thead><tr><th>#</th><th>Time</th><th>GC</th></tr></thead><tbody id="bestDefenses"></tbody></table></div>
-    </div>
-  </section>
+  <div class="live-bar">
+    <section class="panel lb-side">
+      <h3>⚽ Artilharia</h3>
+      <table><thead><tr><th>#</th><th>Time</th><th>Gols</th></tr></thead><tbody id="topScorers"></tbody></table>
+    </section>
+    <section class="panel sticky lb-center" id="standingsSection">
+      <h2>📊 Classificação</h2>
+      <div class="table-wrap"><table><thead><tr>
+        <th>#</th><th>Jogador</th><th>J</th><th>V</th><th>E</th><th>D</th><th>GP</th><th>GC</th><th>SG</th><th>Pts</th>
+      </tr></thead><tbody id="standings"></tbody></table></div>
+      <p class="small">Desempate: Pontos → Confronto direto → Saldo de gols → Gols marcados → Vitórias.</p>
+    </section>
+    <section class="panel lb-side">
+      <h3>🧤 Menos Gols Sofridos</h3>
+      <table><thead><tr><th>#</th><th>Time</th><th>GC</th></tr></thead><tbody id="bestDefenses"></tbody></table>
+    </section>
+  </div>
 
   <section class="panel">
     <h2>⚽ Liga — Ida e Volta</h2>
-    ${VIEWER?'':`<div class="info">Em cada jogo, preencha o placar e use <strong>📷 Resumo da partida</strong> para anexar a imagem das estatísticas.</div>`}
     <div id="league">${leagueHTML()}</div>
   </section>
 
@@ -1019,7 +1030,6 @@ function pageParts(){
   return `
   <section class="panel">
     <h2>👥 Cadastro de participantes</h2>
-    ${VIEWER?'':`<div class="info">Cadastre cada participante, a logo do time e a imagem <strong>Status Jhow Pré-Liga 2026</strong>. O resumo de dados de jogo é atualizado com os placares e os resumos de partida.</div>`}
   </section>
   ${S.parts.map((p,i)=>{
     const pos=st.findIndex(s=>s.id===p.id), s=st[pos], a=agg[p.id];
@@ -1066,7 +1076,6 @@ function statsLeague(){
   return `
   <section class="panel">
     <h2>📈 Estatísticas dos jogadores</h2>
-    ${VIEWER?'':`<div class="info">Geradas a partir dos <strong>resumos de partida</strong> anexados em cada jogo. Jogos com estatísticas preenchidas: <strong>${total}</strong>. Clique em <em>📷 Resumo da partida</em> na página da Liga para adicionar mais.</div>`}
     ${withData.length?`<div class="lead-grid">
       ${lead('Mais posse de bola','⏱️',a=>a.posse/a.n,a=>f1(a.posse/a.n)+'% em média')}
       ${lead('Mais chutes por jogo','🎯',a=>a.chutes/a.n,a=>f1(a.chutes/a.n)+' por jogo')}
@@ -1279,9 +1288,7 @@ function statsPre(){
   return `
   <section class="panel">
     <h2>📊 Estatísticas de Pré-temporada</h2>
-    ${VIEWER
-      ? `<p class="muted" style="margin:0 0 14px">Médias por jogo de cada participante na pré-temporada, calculadas com os jogos validados.</p>`
-      : `<div class="info">1) Carregue as imagens de estatísticas dos jogos de cada participante. 2) Em <strong>Ver imagens</strong>, clique em <strong>Conferir</strong> para ler a imagem, corrigir e completar os valores. 3) Clique em <strong>Validar</strong> — as médias por jogo usam só os jogos validados. Imagens: <strong>${total}</strong> • validados: <strong>${validated}</strong>.</div>`}
+    <p class="muted" style="margin:0 0 14px">Médias por jogo de cada participante na pré-temporada, calculadas com os jogos validados.</p>
     ${validated?preCmpTable(aggs):'<p class="muted">Ainda não há jogos validados.</p>'}
   </section>
   ${S.parts.map((p,i)=>{
