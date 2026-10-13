@@ -81,7 +81,8 @@ td:nth-child(2),th:nth-child(2){text-align:left}
 .position{font-weight:bold}
 .qualified{background:rgba(37,99,235,.14)}
 .eliminated{background:rgba(220,38,38,.10)}
-.sticky{position:sticky;top:57px;z-index:50;padding:12px 16px;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+.sticky{padding:12px 16px;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+@media (min-width:751px){.sticky{position:sticky;top:57px;z-index:50}}
 .sticky h2{margin:0 0 8px;font-size:20px}
 .sticky th,.sticky td{padding:6px 8px;font-size:15px}
 .sticky p{margin:6px 0 0}
@@ -176,6 +177,37 @@ td:nth-child(2),th:nth-child(2){text-align:left}
 .viewer #nav a[data-r="iniciar"]{display:none}
 .viewer input:disabled,.viewer select:disabled{opacity:1;-webkit-text-fill-color:var(--text);cursor:default}
 .viewer .status-slot{border-style:solid}
+.cmp{min-width:620px}
+.cmp th,.cmp td{padding:9px 10px;text-align:center !important;font-size:14px}
+.cmp td:first-child,.cmp th:first-child{text-align:left !important;position:sticky;left:0;background:var(--panel);z-index:1;white-space:nowrap}
+.cmp thead th{vertical-align:bottom;background:var(--panel2)}
+.cmp .cmp-h{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:12px;color:var(--text)}
+.cmp tr.sec td{background:var(--panel2);color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.7px;font-weight:bold;text-align:left !important;padding:7px 10px;position:static}
+.cmp td.best{color:var(--gold);font-weight:bold}
+.cmp td{white-space:nowrap}
+.cmp .st{font-size:.72em}
+.grp-t{font-size:12px;font-weight:bold;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin:16px 0 0}
+.grp .mini-grid{margin-top:6px}
+.mteam .tname{overflow-wrap:anywhere}
+@media (max-width:750px){
+  input,select{font-size:16px}
+  .champion-content{overflow-y:auto}
+  .champion-name{font-size:clamp(30px,min(10vh,11vw),90px);overflow-wrap:anywhere;max-width:100%}
+  .nav .brand span{display:none}
+  .btn,button{padding:11px 14px}
+  .sticky table{min-width:0;width:100%}
+  .sticky th,.sticky td{padding:6px 3px;font-size:13px}
+  .sticky th:nth-child(7),.sticky td:nth-child(7),.sticky th:nth-child(8),.sticky td:nth-child(8){display:none}
+  .sticky .standings-team{gap:6px}
+  .sticky .standings-team span:last-child{overflow-wrap:anywhere;line-height:1.15}
+  .stats-card table{min-width:0}
+  .cmp{min-width:0;width:100%;table-layout:fixed}
+  .cmp th,.cmp td{padding:7px 2px;font-size:12px}
+  .cmp td:first-child,.cmp th:first-child{white-space:normal;width:31%;line-height:1.2;padding-left:8px;padding-right:4px}
+  .cmp .cmp-h{font-size:10.5px;gap:3px;overflow-wrap:anywhere}
+  .cmp .slogo{width:20px;height:20px;flex-basis:20px}
+  .cmp tr.sec td{font-size:10px;padding-left:8px}
+}
 /* Modal */
 .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:9000;display:flex;align-items:center;justify-content:center;padding:12px}
 .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(980px,100%);max-height:94vh;overflow:auto;padding:20px;position:relative}
@@ -841,7 +873,7 @@ function pageLiga(){
 
   <section class="panel">
     <h2>⚽ Liga — Ida e Volta</h2>
-    <div class="info">Em cada jogo, preencha o placar e use <strong>📷 Resumo da partida</strong> para anexar a imagem das estatísticas.</div>
+    ${VIEWER?'':`<div class="info">Em cada jogo, preencha o placar e use <strong>📷 Resumo da partida</strong> para anexar a imagem das estatísticas.</div>`}
     <div id="league">${leagueHTML()}</div>
   </section>
 
@@ -987,7 +1019,7 @@ function pageParts(){
   return `
   <section class="panel">
     <h2>👥 Cadastro de participantes</h2>
-    <div class="info">Cadastre cada participante, a logo do time e a imagem <strong>Status Jhow Pré-Liga 2026</strong>. O resumo de dados de jogo é atualizado com os placares e os resumos de partida.</div>
+    ${VIEWER?'':`<div class="info">Cadastre cada participante, a logo do time e a imagem <strong>Status Jhow Pré-Liga 2026</strong>. O resumo de dados de jogo é atualizado com os placares e os resumos de partida.</div>`}
   </section>
   ${S.parts.map((p,i)=>{
     const pos=st.findIndex(s=>s.id===p.id), s=st[pos], a=agg[p.id];
@@ -1034,7 +1066,7 @@ function statsLeague(){
   return `
   <section class="panel">
     <h2>📈 Estatísticas dos jogadores</h2>
-    <div class="info">Geradas a partir dos <strong>resumos de partida</strong> anexados em cada jogo. Jogos com estatísticas preenchidas: <strong>${total}</strong>. Clique em <em>📷 Resumo da partida</em> na página da Liga para adicionar mais.</div>
+    ${VIEWER?'':`<div class="info">Geradas a partir dos <strong>resumos de partida</strong> anexados em cada jogo. Jogos com estatísticas preenchidas: <strong>${total}</strong>. Clique em <em>📷 Resumo da partida</em> na página da Liga para adicionar mais.</div>`}
     ${withData.length?`<div class="lead-grid">
       ${lead('Mais posse de bola','⏱️',a=>a.posse/a.n,a=>f1(a.posse/a.n)+'% em média')}
       ${lead('Mais chutes por jogo','🎯',a=>a.chutes/a.n,a=>f1(a.chutes/a.n)+' por jogo')}
@@ -1188,27 +1220,69 @@ function validatePre(k){
   e.ok=true; save(); toast('✓ Imagem validada.'); closeModal();
 }
 
+const PRE_ROWS=[
+  {sec:'Resultados'},
+  {l:'Jogos validados', v:a=>a.n, f:v=>String(v), always:true},
+  {l:'V-E-D', t:a=>a.j?`${a.v}-${a.e}-${a.d}`:'—'},
+  {l:'Gols pró / jogo', v:a=>a.j?a.gf/a.j:null, f:f1, best:'max'},
+  {l:'Gols contra / jogo', v:a=>a.j?a.gc/a.j:null, f:f1, best:'min'},
+  {sec:'Ataque'},
+  {l:'Chutes / jogo', v:a=>pAvg(a,'chutes'), f:f1, best:'max'},
+  {l:'Chutes no gol', v:a=>pct(a.sum.chutesGol,a.sum.chutes), f:v=>v+'%', best:'max'},
+  {l:'Cruzamentos / jogo', v:a=>pAvg(a,'cruzamentos'), f:f1, best:'max'},
+  {l:'Escanteios / jogo', v:a=>pAvg(a,'escanteios'), f:f1, best:'max'},
+  {sec:'Posse e passes'},
+  {l:'Posse média', v:a=>pAvg(a,'posse'), f:v=>f1(v)+'%', best:'max'},
+  {l:'Passes / jogo', v:a=>pAvg(a,'passes'), f:f1, best:'max'},
+  {l:'Passes certos', v:a=>pct(a.sum.passesCertos,a.sum.passes), f:v=>v+'%', best:'max'},
+  {sec:'Defesa'},
+  {l:'Interceptações / jogo', v:a=>pAvg(a,'interceptacoes'), f:f1, best:'max'},
+  {l:'Desarmes / jogo', v:a=>pAvg(a,'desarmes'), f:f1, best:'max'},
+  {l:'Defesas / jogo', v:a=>pAvg(a,'defesas'), f:f1, best:'max'},
+  {sec:'Faltas e bolas paradas'},
+  {l:'Faltas / jogo', v:a=>pAvg(a,'faltas'), f:f1, best:'min'},
+  {l:'Impedimentos / jogo', v:a=>pAvg(a,'impedimentos'), f:f1, best:'min'},
+  {l:'Cobranças de falta / jogo', v:a=>pAvg(a,'cobrancasFalta'), f:f1}
+];
+function preVal(r,a){
+  if(r.t) return a.n?r.t(a):'—';
+  if(!a.n&&!r.always) return null;
+  return r.v(a);
+}
+function preCell(r,a){ if(r.t) return preVal(r,a); const v=preVal(r,a); return v==null?'—':r.f(v); }
+function preCmpTable(aggs){
+  const cols=S.parts.length+1;
+  const head=`<tr><th>Estatística</th>${S.parts.map(p=>`<th><div class="cmp-h">${lg(p.id,'slogo')}<span>${esc(dn(p))}</span></div></th>`).join('')}</tr>`;
+  const body=PRE_ROWS.map(r=>{
+    if(r.sec) return `<tr class="sec"><td colspan="${cols}">${r.sec}</td></tr>`;
+    let target=null;
+    if(r.best){
+      const vs=aggs.map(a=>preVal(r,a)).filter(v=>v!=null);
+      if(vs.length>=2 && new Set(vs).size>1) target=r.best==='max'?Math.max(...vs):Math.min(...vs);
+    }
+    return `<tr><td>${r.l}</td>${aggs.map(a=>{
+      const raw=r.t?null:preVal(r,a);
+      const best=target!=null&&raw!=null&&raw===target;
+      return `<td class="${best?'best':''}">${preCell(r,a)}${best?'<span class="st"> ★</span>':''}</td>`;}).join('')}</tr>`;
+  }).join('');
+  return `<div class="table-wrap"><table class="cmp"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <p class="small" style="margin-top:8px">★ = melhor valor da linha (em <em>gols contra</em>, <em>faltas</em> e <em>impedimentos</em>, menos é melhor). Todos os valores são médias por jogo, só com jogos validados.</p>`;
+}
+function preGroups(){
+  const g=[]; PRE_ROWS.forEach(r=>{ if(r.sec) g.push({t:r.sec,rows:[]}); else g[g.length-1].rows.push(r); }); return g;
+}
 function statsPre(){
   const total=S.parts.reduce((a,p)=>a+preList(p.id).length,0);
   const aggs=S.parts.map(p=>preAgg(p.id));
   const validated=aggs.reduce((a,x)=>a+x.n,0);
   const mini=(v,l)=>`<div class="mini"><b>${v}</b><span>${l}</span></div>`;
-  const tbl=`<div class="table-wrap"><table style="min-width:980px"><thead><tr>
-    <th>#</th><th>Jogador</th><th>Jogos</th><th>V-E-D</th><th>Gols pró</th><th>Gols contra</th><th>Posse %</th><th>Chutes</th><th>No gol %</th>
-    <th>Passes</th><th>Certos %</th><th>Cruz.</th><th>Intercep.</th><th>Desarmes</th><th>Defesas</th><th>Faltas</th><th>Escant.</th><th>Imped.</th>
-  </tr></thead><tbody>
-  ${S.parts.map((p,i)=>{const a=aggs[i];return `<tr><td>${i+1}º</td><td><div class="standings-team">${lg(p.id,'slogo')}<span>${esc(dn(p))}</span></div></td>
-    <td>${a.n}</td><td>${a.j?`${a.v}-${a.e}-${a.d}`:'—'}</td><td>${a.j?f1(a.gf/a.j):'—'}</td><td>${a.j?f1(a.gc/a.j):'—'}</td>
-    <td>${dash(pAvg(a,'posse'))}</td><td>${dash(pAvg(a,'chutes'))}</td><td>${pct(a.sum.chutesGol,a.sum.chutes)??'—'}</td>
-    <td>${dash(pAvg(a,'passes'))}</td><td>${pct(a.sum.passesCertos,a.sum.passes)??'—'}</td><td>${dash(pAvg(a,'cruzamentos'))}</td>
-    <td>${dash(pAvg(a,'interceptacoes'))}</td><td>${dash(pAvg(a,'desarmes'))}</td><td>${dash(pAvg(a,'defesas'))}</td>
-    <td>${dash(pAvg(a,'faltas'))}</td><td>${dash(pAvg(a,'escanteios'))}</td><td>${dash(pAvg(a,'impedimentos'))}</td></tr>`;}).join('')}
-  </tbody></table></div><p class="small">Todos os valores são médias por jogo (exceto Jogos, V-E-D e percentuais), calculadas só com imagens validadas.</p>`;
   return `
   <section class="panel">
     <h2>📊 Estatísticas de Pré-temporada</h2>
-    <div class="info">1) Carregue as imagens de estatísticas dos jogos de cada participante. 2) Clique na miniatura para <strong>ler a imagem, conferir e completar</strong> os valores. 3) Clique em <strong>Validar</strong> — as médias por jogo são calculadas com as imagens validadas. Imagens: <strong>${total}</strong> • validadas: <strong>${validated}</strong>.</div>
-    ${validated?tbl:'<p class="muted">Ainda não há imagens validadas. Abra uma miniatura abaixo para começar.</p>'}
+    ${VIEWER
+      ? `<p class="muted" style="margin:0 0 14px">Médias por jogo de cada participante na pré-temporada, calculadas com os jogos validados.</p>`
+      : `<div class="info">1) Carregue as imagens de estatísticas dos jogos de cada participante. 2) Em <strong>Ver imagens</strong>, clique em <strong>Conferir</strong> para ler a imagem, corrigir e completar os valores. 3) Clique em <strong>Validar</strong> — as médias por jogo usam só os jogos validados. Imagens: <strong>${total}</strong> • validados: <strong>${validated}</strong>.</div>`}
+    ${validated?preCmpTable(aggs):'<p class="muted">Ainda não há jogos validados.</p>'}
   </section>
   ${S.parts.map((p,i)=>{
     const list=preList(p.id), a=aggs[i];
@@ -1216,22 +1290,13 @@ function statsPre(){
       ${statusSlot(p,i)}
       <div>
         <div class="phead">${lg(p.id,'mlogo')}<div><h3 style="font-size:20px">${esc(dn(p))}</h3><div class="small">Pré-temporada${p.team?` • ${esc(p.team)}`:''}</div></div></div>
-        <h3 style="font-size:15px;margin-bottom:8px">🖼️ Imagens de estatísticas dos jogos</h3>
-        <div class="pre-actions">
+        ${VIEWER?'':`<div class="pre-actions">
           <label class="btn blue small" style="cursor:pointer">📎 Carregar imagens de jogos<input type="file" accept="image/*" multiple style="display:none" onchange="loadPreImgs(event,${i})"></label>
           <button class="ghost small" onclick="openPreList(${i})">🖼️ Ver imagens (${list.length})</button>
-          <span class="small">${a.n} validada(s)${a.pend?` • ${a.pend} pendente(s)`:''}</span>
-        </div>
-        <h3 style="margin-top:18px;font-size:15px">📋 Resumo por jogo (pré-temporada)</h3>
-        ${a.n?`
-        <div class="mini-grid">
-          ${mini(a.n,'Jogos validados')}${mini(a.j?`${a.v}-${a.e}-${a.d}`:'—','V-E-D')}${mini(a.j?f1(a.gf/a.j):'—','Gols pró/jogo')}${mini(a.j?f1(a.gc/a.j):'—','Gols contra/jogo')}
-          ${mini(pAvg(a,'posse')==null?'—':f1(pAvg(a,'posse'))+'%','Posse média')}${mini(dash(pAvg(a,'chutes')),'Chutes/jogo')}${mini(pct(a.sum.chutesGol,a.sum.chutes)==null?'—':pct(a.sum.chutesGol,a.sum.chutes)+'%','Chutes no gol')}
-          ${mini(dash(pAvg(a,'passes')),'Passes/jogo')}${mini(pct(a.sum.passesCertos,a.sum.passes)==null?'—':pct(a.sum.passesCertos,a.sum.passes)+'%','Passes certos')}${mini(dash(pAvg(a,'cruzamentos')),'Cruzam./jogo')}
-
-          ${mini(dash(pAvg(a,'interceptacoes')),'Intercep./jogo')}${mini(dash(pAvg(a,'desarmes')),'Desarmes/jogo')}${mini(dash(pAvg(a,'defesas')),'Defesas/jogo')}
-          ${mini(dash(pAvg(a,'faltas')),'Faltas/jogo')}${mini(dash(pAvg(a,'escanteios')),'Escant./jogo')}${mini(dash(pAvg(a,'impedimentos')),'Imped./jogo')}${mini(dash(pAvg(a,'cobrancasFalta')),'Cob. falta/jogo')}
-        </div>`:`<p class="muted small">Valide ao menos uma imagem para ver as médias por jogo.</p>`}
+          <span class="small">${a.n} validado(s)${a.pend?` • ${a.pend} pendente(s)`:''}</span>
+        </div>`}
+        ${a.n?preGroups().map(g=>`<div class="grp"><div class="grp-t">${g.t}</div><div class="mini-grid">${g.rows.map(r=>mini(preCell(r,a),r.l)).join('')}</div></div>`).join('')
+             :`<p class="muted small" style="margin-top:14px">${VIEWER?'Ainda sem jogos validados.':'Valide ao menos uma imagem para ver as médias por jogo.'}</p>`}
       </div>
     </section>`;}).join('')}`;
 }
