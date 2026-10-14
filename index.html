@@ -170,6 +170,7 @@ td:nth-child(2),th:nth-child(2){text-align:left}
 
 .mstats input.miss{border-color:#b45309}
 .mstats input.ocr{border-color:var(--gold);background:rgba(255,210,74,.10)}
+.mstats input.ocr.low{border-color:#f87171;background:rgba(248,113,113,.14)}
 .preform{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-bottom:12px;align-items:end}
 .preform label{font-size:12px;color:var(--mut);display:block}
 .preform select{margin-top:3px}
@@ -267,6 +268,24 @@ div.ocr{font-size:13px;margin-top:8px;min-height:18px;color:var(--gold)}
   main{margin-top:12px}.panel{padding:15px}
   .status-slot{width:100%;max-width:280px;margin:0 auto}
 }
+
+/* seletor individual / confronto */
+.sel-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px}
+.sel-row label{flex:1 1 180px;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;font-weight:bold}
+.sel-row select{margin-top:4px}
+.sel-row .vs{font-weight:bold;color:var(--mut);padding-bottom:11px}
+.who{display:flex;align-items:center;gap:12px;margin:4px 0 2px}
+.who h3{font-size:20px;margin:0}
+.vs-table td,.vs-table th{text-align:center !important}
+.vs-table td:first-child,.vs-table th:first-child{position:static;white-space:normal;text-align:center !important;width:auto}
+.vs-table td.lbl{color:var(--mut);font-size:13px;white-space:normal;width:34%}
+.vs-table td.win{color:var(--gold);font-weight:bold}
+.vs-table td.win .st{font-size:.72em}
+.vs-score{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:10px 0 4px}
+.vs-score .mini{min-width:92px;flex:0 1 auto}
+.dh{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);font-size:14px;flex-wrap:wrap}
+.dh span:first-child{color:var(--mut)}
+@media (max-width:750px){ .sel-row .vs{display:none} .vs-table td.lbl{font-size:11px;padding:7px 4px} .vs-table td{font-size:13px} }
 </style>
 </head>
 <body>
@@ -574,7 +593,7 @@ function preprocess(src,crop){
 }
 function getPd(k){
   S.pd=S.pd||{};
-  if(!S.pd[k]) S.pd[k]={side:'h',gh:'',ga:'',stats:{h:{},a:{}},ok:false};
+  if(!S.pd[k]) S.pd[k]={side:'h',opp:'',gh:'',ga:'',stats:{h:{},a:{}},ok:false};
   const e=S.pd[k]; e.stats=e.stats||{h:{},a:{}}; e.stats.h=e.stats.h||{}; e.stats.a=e.stats.a||{};
   return e;
 }
@@ -587,10 +606,11 @@ function styleStat(inp,ent){
   const [side,k]=inp.dataset.sk.split('.'); const v=ent.stats[side][k];
   inp.value=v==null?'':v;
   inp.classList.toggle('ocr',!!(ent.ocr&&ent.ocr[side+'.'+k]));
+  inp.classList.toggle('low',!!(ent.ocr&&ent.ocr[side+'.'+k]===2));
   inp.classList.toggle('miss',!filled(v));
 }
 function statRows(ent,key,kind){
-  const cls=(side,k)=>(ent.ocr&&ent.ocr[side+'.'+k]?'ocr ':'')+(filled(ent.stats[side][k])?'':'miss');
+  const cls=(side,k)=>(ent.ocr&&ent.ocr[side+'.'+k]?'ocr ':'')+(ent.ocr&&ent.ocr[side+'.'+k]===2?'low ':'')+(filled(ent.stats[side][k])?'':'miss');
   const inp=(side,k)=>`<input type="number" min="0" class="${cls(side,k)}" data-sk="${side}.${k}" value="${esc(ent.stats[side][k]??'')}" oninput="setMd('${key}','${side}','${k}',this.value,'${kind||''}',this)">`;
   return STAT_DEFS.map(d=>`<tr><td>${inp('h',d.k)}</td><td class="lbl" style="text-align:center">${d.l}</td><td>${inp('a',d.k)}</td></tr>`).join('');
 }
@@ -602,6 +622,173 @@ function setMd(key,side,k,val,kind,el){
   if(el){ el.classList.remove('ocr'); el.classList.toggle('miss',!filled(val)); }
   save();
 }
+/*GEO_START*/
+const KEYS=['posse','chutes','chutesGol','faltas','impedimentos','escanteios','cobrancasFalta','passes','passesCertos','cruzamentos','interceptacoes','desarmes','defesas'];
+// rótulos tolerantes a erro de OCR (testados por palavra, na ordem do jogo)
+const LABEL_RE={posse:/^poss?e?$|^pos[s5]e$/,chutes:/^chut/,gol:/^go[l1i]$|^gol/,faltas:/^falt/,impedimentos:/^imp?edi|^impe/,escanteios:/^esc[ao]nt|^escan/,
+  cobrancas:/^cobran|^cobr/,passes:/^pass[ae]s?$/,certos:/^cert/,cruzamentos:/^cruz/,interceptacoes:/^inter[cç]?e?p|^interc|^intercep/,desarmes:/^desar/,defesas:/^defe[sz]|^defes/};
+function digitsOf(t){
+  let s=String(t).trim(); if(!/^[0-9OolIi|%]{1,4}$/.test(s)) return null;
+  const pct=s.endsWith('%'); s=s.replace('%','').replace(/[Oo]/g,'0').replace(/[lIi|]/g,'1');
+  if(!/^\d{1,3}$/.test(s)) return null; return {v:+s,pct};
+}
+// 1) âncoras: palavra de rótulo -> índice da linha (0..12)
+function anchorsOf(words){
+  const out=[]; const lw=words.map(w=>({w,n:norm(w.t).replace(/[^a-z0-9]/g,'')}));
+  const near=(a,b)=>Math.abs((a.y0+a.y1)/2-(b.y0+b.y1)/2) < 0.7*Math.max(a.y1-a.y0,b.y1-b.y0)+6;
+  lw.forEach(({w,n},i)=>{
+    const cy=(w.y0+w.y1)/2; let idx=-1;
+    const sameLine=lw.filter(o=>o.w!==w&&near(o.w,w)).map(o=>({n:o.n,x:o.w.x0}));
+    const right=sameLine.filter(o=>o.x>w.x0).map(o=>o.n);
+    if(LABEL_RE.posse.test(n)) idx=0;
+    else if(LABEL_RE.chutes.test(n)) idx = right.some(r=>LABEL_RE.gol.test(r)||r==='a') ? 2 : 1;
+    else if(LABEL_RE.faltas.test(n)) idx=3;
+    else if(LABEL_RE.impedimentos.test(n)) idx=4;
+    else if(LABEL_RE.escanteios.test(n)) idx=5;
+    else if(LABEL_RE.cobrancas.test(n)) idx=6;
+    else if(LABEL_RE.passes.test(n)) idx = right.some(r=>LABEL_RE.certos.test(r)) ? 8 : 7;
+    else if(LABEL_RE.certos.test(n)) idx=8;
+    else if(LABEL_RE.cruzamentos.test(n)) idx=9;
+    else if(LABEL_RE.interceptacoes.test(n)) idx=10;
+    else if(LABEL_RE.desarmes.test(n)) idx=11;
+    else if(LABEL_RE.defesas.test(n)) idx=12;
+    if(idx>=0 && w.c>=35) out.push({idx,y:cy,x:(w.x0+w.x1)/2,h:w.y1-w.y0,c:w.c});
+  });
+  // "Passes" e "Passes certos": a palavra "certos" já força idx 8 pelo "Passes" à esquerda; remove "certos" duplicado
+  return out;
+}
+function fitLine(pts){ // y = a + b*x
+  const n=pts.length; if(n<2) return null;
+  const mx=pts.reduce((s,p)=>s+p.x,0)/n, my=pts.reduce((s,p)=>s+p.y,0)/n;
+  let sxx=0,sxy=0; pts.forEach(p=>{ sxx+=(p.x-mx)**2; sxy+=(p.x-mx)*(p.y-my); });
+  if(!sxx) return null; const b=sxy/sxx; return {a:my-b*mx,b};
+}
+function geometry(allAnch){
+  // mediana por linha
+  const by={}; allAnch.forEach(a=>(by[a.idx]=by[a.idx]||[]).push(a));
+  let pts=Object.keys(by).map(k=>{ const l=by[k].sort((p,q)=>p.y-q.y), m=l[Math.floor(l.length/2)]; return {x:+k,y:m.y,cx:m.x}; });
+  if(pts.length<3) return null;
+  let f=null;
+  for(let it=0;it<3;it++){
+    f=fitLine(pts); if(!f||f.b<=5) return null;
+    const res=pts.map(p=>Math.abs(p.y-(f.a+f.b*p.x))); const lim=Math.max(0.3*f.b,6);
+    const keep=pts.filter((p,i)=>res[i]<=lim); if(keep.length===pts.length||keep.length<3) break; pts=keep;
+  }
+  const fx=fitLine(pts.map(p=>({x:p.x,y:p.cx}))) || {a:pts[0].cx,b:0};
+  return {yOf:i=>f.a+f.b*i, xOf:i=>fx.a+fx.b*i, pitch:f.b, n:pts.length};
+}
+// 2) números por (linha, lado)
+function readNumbers(passes,geo){
+  const cand={}; // key idx|side -> {text:{score,count}}
+  passes.forEach(p=>{
+    const cells={};
+    p.words.forEach(w=>{
+      const d=digitsOf(w.t); if(!d) return;
+      const cy=(w.y0+w.y1)/2, cx=(w.x0+w.x1)/2;
+      const idx=Math.round((cy-geo.yOf(0))/geo.pitch);
+      if(idx<0||idx>12) return;
+      // posição (y) tem que bater com a linha
+      if(Math.abs(cy-geo.yOf(idx))>0.48*geo.pitch) return;
+      const dx=cx-geo.xOf(idx); if(Math.abs(dx)<1.8*geo.pitch) return; // muito perto do rótulo
+      const side=dx<0?'h':'a'; (cells[idx+'|'+side]=cells[idx+'|'+side]||[]).push({...w,d,cx});
+    });
+    Object.keys(cells).forEach(k=>{
+      const l=cells[k].sort((a,b)=>a.cx-b.cx); const grp=[[l[0]]];
+      for(let i=1;i<l.length;i++){ const g=grp[grp.length-1], last=g[g.length-1]; if(l[i].x0-last.x1<0.45*geo.pitch) g.push(l[i]); else grp.push([l[i]]); }
+      // se sobrar mais de um grupo, fica o de maior confiança
+      let best=null; grp.forEach(g=>{ const c=g.reduce((s,w)=>s+w.c,0)/g.length; if(!best||c>best.c) best={g,c}; });
+      const txt=best.g.map(w=>String(w.d.v)).join(''); if(txt.length>3) return;
+      const rec=(cand[k]=cand[k]||{}); const r=(rec[txt]=rec[txt]||{s:0,n:0,pct:false,cx:0}); r.s+=best.c; r.n++; r.cx+=best.g.reduce((s,w)=>s+w.cx,0)/best.g.length; r.pct=r.pct||best.g.some(w=>w.d.pct);
+    });
+  });
+  const out={};
+  Object.keys(cand).forEach(k=>{
+    let best=null; const keys=Object.keys(cand[k]);
+    keys.forEach(t=>{ const r=cand[k][t]; if(!best||r.s>best.s) best={t,s:r.s,n:r.n,c:r.s/r.n,cx:r.cx/r.n}; });
+    // leitura truncada ("2" no lugar de "25"): prefere o texto mais longo que contém o vencedor, se foi lido com boa confiança
+    keys.forEach(t=>{ const r=cand[k][t]; if(t.length>best.t.length && t.includes(best.t) && r.s/r.n>=75) best={t,s:r.s,n:r.n,c:r.s/r.n,cx:r.cx/r.n}; });
+    out[k]={v:+best.t,c:best.c,n:best.n,cx:best.cx,alts:keys.length};
+  });
+  return out;
+}
+// 3) coerência entre números
+function sanitize(cells){
+  const g=(i,s)=>cells[i+'|'+s], drop=(i,s)=>{ delete cells[i+'|'+s]; };
+  const lim={0:100,1:60,2:60,3:40,4:30,5:30,6:40,7:900,8:900,9:80,10:120,11:60,12:40};
+  Object.keys(cells).forEach(k=>{ const [i]=k.split('|'); if(cells[k].v>lim[i]) delete cells[k]; });
+  ['h','a'].forEach(s=>{
+    const a=g(2,s),b=g(1,s); if(a&&b&&a.v>b.v){ (a.c<b.c?drop(2,s):drop(1,s)); }
+    const c=g(8,s),d=g(7,s); if(c&&d&&c.v>d.v){ (c.c<d.c?drop(8,s):drop(7,s)); }
+  });
+  const ph=g(0,'h'), pa=g(0,'a');
+  if(ph&&pa&&Math.abs(ph.v+pa.v-100)>1){ (ph.c<pa.c?drop(0,'h'):drop(0,'a')); }
+  const ph2=g(0,'h'), pa2=g(0,'a');
+  if(ph2&&!pa2) cells['0|a']={v:100-ph2.v,c:0,n:0,inf:1}; else if(pa2&&!ph2) cells['0|h']={v:100-pa2.v,c:0,n:0,inf:1};
+  return cells;
+}
+function parseByPosition(passes){
+  const anch=[]; passes.forEach(p=>anch.push(...anchorsOf(p.words)));
+  const geo=geometry(anch); if(!geo) return null;
+  const cells=sanitize(readNumbers(passes,geo));
+  const out={}; Object.keys(cells).forEach(k=>{ const [i,s]=k.split('|'); (out[KEYS[+i]]=out[KEYS[+i]]||{})[s]=cells[k].v; });
+  return {stats:out,geo,anchors:anch.length};
+}
+
+function geoCells(passes,geo){
+  const cells=sanitize(readNumbers(passes,geo));
+  return cells;
+}
+function geoStats(cells){
+  const stats={}, low={};
+  Object.keys(cells).forEach(k=>{ const [i,s]=k.split('|'), c=cells[k]; const key=KEYS[+i];
+    (stats[key]=stats[key]||{})[s]=c.v;
+    if(!c.inf && (c.n<2 || c.c<60)) low[s+'.'+key]=1; });
+  return {stats,low};
+}
+function geoMissingRows(cells){
+  const rows=[]; for(let i=0;i<13;i++) if(!cells[i+'|h']||!cells[i+'|a']) rows.push(i); return rows;
+}
+// centro horizontal da tabela e posição do placar (linha de cima)
+function geoScoreSpots(cells,geo){
+  const pts=[]; for(let i=0;i<13;i++){ const h=cells[i+'|h'], a=cells[i+'|a']; if(h&&a&&h.cx&&a.cx&&!h.inf&&!a.inf) pts.push({x:i,y:(h.cx+a.cx)/2}); }
+  let xm; const f=pts.length>=3?fitLine(pts):null;
+  xm = f ? (i=>f.a+f.b*i) : (pts.length? (i=>pts[0].y) : (i=>geo.xOf(i)+0.6*geo.pitch));
+  const iy=-2.47, y=geo.yOf(iy), c=xm(iy), p=geo.pitch;
+  return {left:{x:c-1.9*p,y},right:{x:c+1.9*p,y},half:0.7*p};
+}
+
+/*GEO_END*/
+function loadImg(src){ return new Promise(r=>{ const i=new Image(); i.onload=()=>r(i); i.onerror=()=>r(null); i.src=src; }); }
+// recorta (fração do original ou caixa em px), amplia e ajusta contraste. Devolve a imagem e como voltar às coordenadas originais.
+function renderPass(img,spec){
+  const bx=spec.box;
+  const cx=bx?Math.max(0,Math.round(bx.x0)):(spec.crop?Math.round(img.width*spec.crop.x):0);
+  const cy=bx?Math.max(0,Math.round(bx.y0)):(spec.crop?Math.round(img.height*spec.crop.y):0);
+  const cw=bx?Math.min(img.width-cx,Math.round(bx.x1-bx.x0)):(spec.crop?Math.round(img.width*spec.crop.w):img.width);
+  const ch=bx?Math.min(img.height-cy,Math.round(bx.y1-bx.y0)):(spec.crop?Math.round(img.height*spec.crop.h):img.height);
+  if(cw<8||ch<8) return null;
+  const sc=spec.th?Math.min(6,spec.th/ch):Math.min(3,spec.tw/cw);
+  const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(cw*sc)); c.height=Math.max(1,Math.round(ch*sc));
+  const x=c.getContext('2d'); x.drawImage(img,cx,cy,cw,ch,0,0,c.width,c.height);
+  const d=x.getImageData(0,0,c.width,c.height), p=d.data;
+  let lo=0,hi=255;
+  if(spec.mode==='stretch'){ lo=255; hi=0; for(let i=0;i<p.length;i+=4){ const g=0.299*p[i]+0.587*p[i+1]+0.114*p[i+2]; if(g<lo) lo=g; if(g>hi) hi=g; } if(hi-lo<10){ lo=0; hi=255; } }
+  for(let i=0;i<p.length;i+=4){
+    let g=0.299*p[i]+0.587*p[i+1]+0.114*p[i+2];
+    if(spec.mode==='stretch') g=(g-lo)/(hi-lo)*255;
+    if(spec.mode==='inv'){ g=255-g; g=(g-60)*1.6; }
+    else if(spec.mode==='soft'){ g=255-g; }
+    g=g<0?0:g>255?255:g; p[i]=p[i+1]=p[i+2]=g;
+  }
+  x.putImageData(d,0,0);
+  return {url:c.toDataURL('image/png'),sc,ox:cx,oy:cy};
+}
+function ocrWords(data,tr){
+  let ws=data.words;
+  if(!ws&&data.blocks){ ws=[]; data.blocks.forEach(b=>(b.paragraphs||[]).forEach(p=>(p.lines||[]).forEach(l=>(l.words||[]).forEach(w=>ws.push(w))))); }
+  return (ws||[]).filter(w=>w&&w.text&&w.text.trim()&&w.bbox).map(w=>({t:w.text.trim(),c:w.confidence,
+    x0:tr.ox+w.bbox.x0/tr.sc, x1:tr.ox+w.bbox.x1/tr.sc, y0:tr.oy+w.bbox.y0/tr.sc, y1:tr.oy+w.bbox.y1/tr.sc}));
+}
 async function runOCR(id,kind){
   const out=document.getElementById('ocrMsg'); const {src,ent}=ocrTarget(id,kind);
   if(!src){ toast('Carregue a imagem primeiro.'); return; }
@@ -609,37 +796,89 @@ async function runOCR(id,kind){
     out.textContent='⏳ Carregando leitor de imagem… (1ª vez pode demorar)';
     await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
     const worker = await Tesseract.createWorker('por');
-    const found={}; let goals=null;
-    const passes=[null,{x:.15,y:.15,w:.65,h:.7}];
-    for(let n=0;n<passes.length;n++){
-      out.textContent=`🔍 Lendo a imagem (${n+1}/${passes.length})…`;
-      const {data} = await worker.recognize(await preprocess(src,passes[n]));
-      if(!goals) goals=parseGoals(data.text);
-      const r = parseStatsText(data.text);
-      Object.keys(r).forEach(k=>{ if(!found[k]||n>0) found[k]=r[k]; });
-    }
+    await worker.setParameters({tessedit_pageseg_mode:'6'});
+    const img=await loadImg(src); if(!img) throw new Error('imagem inválida');
+    const C={x:.15,y:.15,w:.65,h:.7};
+    const specs=[{tw:2400,mode:'inv'},{crop:C,tw:2400,mode:'inv'},{tw:1800,mode:'soft'},{tw:3000,mode:'inv'},{crop:C,tw:2400,mode:'soft'}];
+    const passes=[], textFound={}; let textGoals=null;
+    const run=async(spec,label)=>{
+      const tr=renderPass(img,spec); if(!tr) return;
+      out.textContent=label;
+      const {data}=await worker.recognize(tr.url);
+      passes.push({words:ocrWords(data,tr)});
+      // leitura antiga por texto, só como reserva
+      const r=parseStatsText(data.text||''); Object.keys(r).forEach(k=>{ if(!textFound[k]) textFound[k]=r[k]; });
+      if(!textGoals) textGoals=parseGoals(data.text||'');
+    };
+    for(let n=0;n<specs.length;n++) await run(specs[n],`🔍 Lendo a imagem (${n+1}/${specs.length})…`);
+    let cells={}, low={}, goals=null, geo=null;
+    try{
+      const anch=[]; passes.forEach(p=>anch.push(...anchorsOf(p.words)));
+      geo=geometry(anch);
+      if(geo){
+        cells=geoCells(passes,geo);
+        // linhas que ficaram vazias: lê só aquela faixa da tabela, com o rótulo junto
+        const miss=geoMissingRows(cells).slice(0,5);
+        for(let m=0;m<miss.length;m++){
+          const i=miss[m], p=geo.pitch, cxm=geo.xOf(i);
+          const mk=hr=>({box:{x0:cxm-8.2*p,x1:cxm+8.2*p,y0:geo.yOf(i)-hr*p,y1:geo.yOf(i)+hr*p},tw:2400});
+          await run({...mk(1.7),mode:'inv'},`🔍 Reforçando linhas difíceis (${m+1}/${miss.length})…`);
+          await run({...mk(1.2),mode:'soft'},`🔍 Reforçando linhas difíceis (${m+1}/${miss.length})…`);
+        }
+        if(miss.length) cells=geoCells(passes,geo);
+        const g=geoStats(cells); low=g.low;
+        // placar: lê os dois números do cabeçalho separadamente
+        if(kind==='pre'){
+          const sp=geoScoreSpots(cells,geo); const vals=[];
+          await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'10'});
+          for(const pt of [sp.left,sp.right]){
+            // vários recortes e filtros; só aceita se pelo menos 2 leituras concordarem e nenhuma divergir mais que elas (placar errado é pior que vazio)
+            const votes={};
+            for(const hf of [0.8,1,1.25]) for(const mode of ['raw','stretch']){
+              const tr=renderPass(img,{box:{x0:pt.x-sp.half*hf,x1:pt.x+sp.half*hf,y0:pt.y-sp.half*hf,y1:pt.y+sp.half*hf},th:150,mode});
+              if(!tr) continue;
+              const {data}=await worker.recognize(tr.url); const t=(data.text||'').replace(/\D/g,'');
+              if(t && t.length<=2 && data.confidence>=45 && +t<=20) votes[t]=(votes[t]||0)+1;
+            }
+            let best=null; Object.keys(votes).forEach(t=>{ if(!best||votes[t]>votes[best]) best=t; });
+            const tot=Object.keys(votes).reduce((a,t)=>a+votes[t],0);
+            vals.push(best!=null&&votes[best]>=2&&votes[best]>tot-votes[best]?+best:null);
+          }
+          if(vals[0]!=null&&vals[1]!=null) goals=vals;
+        }
+      }
+    }catch(e){ console.warn('leitura por posição falhou',e); }
     await worker.terminate();
     ent.ocr=ent.ocr||{};
-    let filledN=0;
-    Object.keys(found).forEach(k=>{
+    const found={}; // chave -> [h,a]
+    const gs=geoStats(cells).stats;
+    Object.keys(gs).forEach(k=>{ found[k]=[gs[k].h,gs[k].a]; });
+    // reserva: o que só a leitura por texto achou
+    Object.keys(textFound).forEach(k=>{ if(!found[k]) found[k]=textFound[k]; else { if(found[k][0]==null) found[k][0]=textFound[k][0]; if(found[k][1]==null) found[k][1]=textFound[k][1]; } });
+    let filledN=0, lowN=0;
+    STAT_DEFS.forEach(d=>{
+      const f=found[d.k]; if(!f) return;
       [['h',0],['a',1]].forEach(([side,ix])=>{
-        const cur=ent.stats[side][k];
+        const v=f[ix]; if(v==null) return;
+        const cur=ent.stats[side][d.k];
         // não sobrescreve o que você digitou à mão
-        if(!filled(cur) || ent.ocr[side+'.'+k]){ ent.stats[side][k]=found[k][ix]; ent.ocr[side+'.'+k]=1; }
+        if(!filled(cur) || ent.ocr[side+'.'+d.k]){
+          ent.stats[side][d.k]=v; const isLow=!!low[side+'.'+d.k]||(!gs[d.k]||gs[d.k][side]==null);
+          ent.ocr[side+'.'+d.k]=isLow?2:1; if(isLow) lowN++; filledN++;
+        }
       });
-      filledN++;
     });
     if(kind==='pre') ent.ok=false;
     if(kind==='pre' && goals && (!filled(ent.gh)||!filled(ent.ga))){
       ent.gh=goals[0]; ent.ga=goals[1];
       const gh=document.getElementById('preGh'), ga=document.getElementById('preGa');
-      if(gh) gh.value=goals[0]; if(ga) ga.value=goals[1];
+      if(gh){ gh.value=goals[0]; gh.classList.add('ocr'); } if(ga){ ga.value=goals[1]; ga.classList.add('ocr'); }
     }
     save();
     document.querySelectorAll('[data-sk]').forEach(i=>styleStat(i,ent));
-    const miss=STAT_DEFS.length-filledN;
+    const total=STAT_DEFS.length*2, miss=total-STAT_DEFS.reduce((a,d)=>a+['h','a'].filter(sd=>filled(ent.stats[sd][d.k])).length,0);
     out.textContent = filledN
-      ? `✓ ${filledN} de ${STAT_DEFS.length} estatísticas lidas (campos amarelos: confira).${miss?` ${miss} não foram lidas (campos laranja): preencha à mão.`:''}`
+      ? `✓ ${filledN} números lidos de ${total}. Amarelo: confira${lowN?` • vermelho (${lowN}): leitura incerta, confira com cuidado`:''}${miss?` • ${miss} vazios (laranja): preencha à mão`:''}.${goals&&kind==='pre'?' Placar lido do topo da imagem — confira também.':''}`
       : '⚠ Não consegui ler números nessa imagem. Preencha manualmente.';
   }catch(e){
     out.textContent='⚠ Leitura automática indisponível ('+(e.message||e)+'). Preencha manualmente.';
@@ -985,7 +1224,7 @@ function openMatch(mid){
         <tbody>${rows}</tbody></table>
         <div class="ocr" id="ocrMsg"></div>
         <p class="small">Lado esquerdo da imagem = mandante (esquerda da tabela). Os números alimentam a página de Estatísticas.</p>
-        <p class="small legend">🟡 lido da imagem — confira &nbsp;•&nbsp; 🟠 vazio — preencha se tiver o dado</p>
+        <p class="small legend">🟡 lido da imagem — confira &nbsp;•&nbsp; 🔴 leitura incerta &nbsp;•&nbsp; 🟠 vazio — preencha se tiver o dado</p>
       </div>
     </div>
     <div class="buttons"><button onclick="closeModal()">✓ Concluir</button></div>
@@ -1094,9 +1333,153 @@ function statsLeague(){
       <td>${n?a.faltas:'—'}</td><td>${n?a.escanteios:'—'}</td><td>${n?a.impedimentos:'—'}</td></tr>`;}).join('')}
     </tbody></table></div>
     <p class="small">Totais somados de todas as partidas; posse é a média por jogo.</p>
-  </section>`;
+  </section>
+  ${(()=>{const la=leagueAggs(); return compareTools('liga',S.parts.map(p=>la[p.id]));})()}`;
 }
 
+
+
+/* ---------- Seleção individual e confronto (Liga e Pré-temporada) ---------- */
+let statsSel={liga:{one:'',a:'',b:''},pre:{one:'',a:'',b:'',opp:''}};
+function setSel(mode,key,val){ statsSel[mode][key]=val; route(true); }
+function leagueAggs(){
+  const st=calcStandings(), by={}; st.forEach(x=>by[x.id]=x);
+  const out={};
+  S.parts.forEach(p=>{ const r=by[p.id]||{};
+    out[p.id]={n:0,pend:0,j:r.j||0,v:r.v||0,e:r.e||0,d:r.d||0,gf:r.gp||0,gc:r.gc||0,pts:r.pts||0,sum:{},cnt:{}};
+    STAT_KEYS.forEach(k=>{ out[p.id].sum[k]=0; out[p.id].cnt[k]=0; }); });
+  Object.keys(S.md||{}).forEach(mid=>{
+    const t=teamsOf(mid), sd=S.md[mid]&&S.md[mid].stats; if(!t||!sd) return;
+    [['h',t[0]],['a',t[1]]].forEach(([side,id])=>{
+      const x=sd[side], a=out[id]; if(!x||!a||!STAT_KEYS.some(k=>filled(x[k]))) return;
+      a.n++; STAT_KEYS.forEach(k=>{ if(filled(x[k])){ a.sum[k]+=+x[k]; a.cnt[k]++; } });
+    });
+  });
+  return out;
+}
+
+/* ---------- Agregados só dos jogos entre dois participantes ---------- */
+function newAgg(){ const a={n:0,pend:0,j:0,v:0,e:0,d:0,gf:0,gc:0,sum:{},cnt:{}}; STAT_KEYS.forEach(k=>{ a.sum[k]=0; a.cnt[k]=0; }); return a; }
+function addStats(a,m){ if(!m||!STAT_KEYS.some(k=>filled(m[k]))) return false; a.n++; STAT_KEYS.forEach(k=>{ if(filled(m[k])){ a.sum[k]+=+m[k]; a.cnt[k]++; } }); return true; }
+function addScore(a,gf,gc){ a.j++; a.gf+=gf; a.gc+=gc; if(gf>gc) a.v++; else if(gf<gc) a.d++; else a.e++; }
+function preVsAggs(A,B){
+  const aa=newAgg(), bb=newAgg(), seen=new Set();
+  [[A,B],[B,A]].forEach(([own,oth])=>preList(own).forEach(k=>{
+    const e=S.pd&&S.pd[k]; if(!e||!e.ok||e.opp!==oth) return;
+    const side=e.side||'h', os=side==='h'?'a':'h';
+    const mine=(e.stats&&e.stats[side])||{}, theirs=(e.stats&&e.stats[os])||{};
+    const hasSc=filled(e.gh)&&filled(e.ga);
+    const gOwn=hasSc?(side==='h'?+e.gh:+e.ga):null, gOth=hasSc?(side==='h'?+e.ga:+e.gh):null;
+    const sA=own===A?mine:theirs, sB=own===A?theirs:mine, gA=own===A?gOwn:gOth, gB=own===A?gOth:gOwn;
+    const sig=JSON.stringify([sA,sB,gA,gB]); if(seen.has(sig)) return; seen.add(sig);
+    addStats(aa,sA); addStats(bb,sB);
+    if(hasSc){ addScore(aa,gA,gB); addScore(bb,gB,gA); }
+  }));
+  return [aa,bb];
+}
+function leagueVsAggs(A,B){
+  const aa=newAgg(), bb=newAgg();
+  directGames(A,B).forEach(m=>{
+    const aLeft=m.h===A, sd=S.md[m.id]&&S.md[m.id].stats;
+    if(sd){ addStats(aa,sd[aLeft?'h':'a']); addStats(bb,sd[aLeft?'a':'h']); }
+    if(m.sc){ const ga=aLeft?m.sc[0]:m.sc[1], gb=aLeft?m.sc[1]:m.sc[0]; addScore(aa,ga,gb); addScore(bb,gb,ga); }
+  });
+  return [aa,bb];
+}
+function partOpts(sel,blank){
+  return `<option value="">${blank}</option>`+S.parts.map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(dn(p))}</option>`).join('');
+}
+function directGames(A,B){
+  const out=[];
+  leagueMatches().forEach(m=>{
+    if(!((m.h===A&&m.a===B)||(m.h===B&&m.a===A))) return;
+    const sc=scoreOf(m.id);
+    out.push({id:m.id,t:`Rodada ${m.r+1} — ${m.r<5?'IDA':'VOLTA'}`,h:m.h,a:m.a,sc});
+  });
+  [['sf1','Semifinal 1'],['sf2','Semifinal 2'],['final','Final']].forEach(([k,n])=>{
+    const t=teamsOf(k); if(!t) return;
+    if(!((t[0]===A&&t[1]===B)||(t[0]===B&&t[1]===A))) return;
+    const m=S.ko[k]||{}; out.push({id:k,t:n,h:t[0],a:t[1],sc:(filled(m.h)&&filled(m.a))?[+m.h,+m.a]:null});
+  });
+  return out;
+}
+function compareTools(mode,aggs){
+  const sel=statsSel[mode], liga=mode==='liga';
+  const idx=id=>S.parts.findIndex(p=>p.id===id);
+  const valid=id=>idx(id)>=0;
+  if(!valid(sel.one)) sel.one=''; if(!valid(sel.a)) sel.a=''; if(!valid(sel.b)) sel.b='';
+  const lab=r=>liga&&r.l2?r.l2:r.l;
+  // --- individual
+  let one='';
+  if(sel.one){
+    const i=idx(sel.one), p=S.parts[i];
+    if(!liga&&sel.opp&&sel.opp!=='ia'&&!valid(sel.opp)) sel.opp='';
+    if(!liga&&sel.opp===sel.one) sel.opp='';
+    const a=(!liga&&sel.opp)?preAgg(p.id,sel.opp):aggs[i];
+    const mini=(v,l)=>`<div class="mini"><b>${v}</b><span>${l}</span></div>`;
+    let pos='';
+    if(liga){ const st=calcStandings(); const k=st.findIndex(x=>x.id===p.id); pos=` • ${k+1}º na classificação • ${st[k].pts} pts`; }
+    const oppSel=liga?'':`<div class="sel-row" style="margin-top:12px"><label>Filtrar por adversário<select class="keep" onchange="setSel('pre','opp',this.value)"><option value="">Todos os jogos</option>${S.parts.filter(q=>q.id!==p.id).map(q=>`<option value="${q.id}" ${sel.opp===q.id?'selected':''}>Contra ${esc(dn(q))}</option>`).join('')}<option value="ia" ${sel.opp==='ia'?'selected':''}>Contra a 🤖 IA</option></select></label></div>`;
+    one=`<div class="who">${lg(p.id,'mlogo')}<div><h3>${esc(dn(p))}</h3><div class="small">${liga?'Liga':'Pré-temporada'}${pos}</div></div></div>`+oppSel+
+      (a.n?preGroups().map(g=>`<div class="grp"><div class="grp-t">${g.t}</div><div class="mini-grid">${g.rows.map(r=>mini(preCell(r,a),lab(r))).join('')}</div></div>`).join('')
+          :`<p class="muted small" style="margin-top:12px">${liga?'Ainda sem resumos de partida deste participante.':(sel.opp?'Ainda sem jogos validados contra esse adversário.':'Ainda sem jogos validados deste participante.')}</p>`);
+  }
+  // --- confronto
+  let vs='';
+  if(sel.a&&sel.b&&sel.a===sel.b) vs=`<p class="muted">Escolha dois participantes diferentes.</p>`;
+  else if(sel.a&&sel.b){
+    const A=S.parts[idx(sel.a)], B=S.parts[idx(sel.b)];
+    const [aa,bb]=liga?leagueVsAggs(A.id,B.id):preVsAggs(A.id,B.id);
+    let wa=0,wb=0,eq=0;
+    const rows=PRE_ROWS.map(r=>{
+      if(r.sec) return `<tr class="sec"><td colspan="3">${r.sec}</td></tr>`;
+      const va=r.t?null:preVal(r,aa), vb=r.t?null:preVal(r,bb);
+      let ca='',cb='';
+      if(r.best&&va!=null&&vb!=null){
+        if(va===vb) eq++;
+        else{ const aw=r.best==='max'?va>vb:va<vb; if(aw){wa++;ca='win';}else{wb++;cb='win';} }
+      }
+      const st=' <span class="st">★</span>';
+      return `<tr><td class="${ca}">${preCell(r,aa)}${ca?st:''}</td><td class="lbl">${lab(r)}</td><td class="${cb}">${preCell(r,bb)}${cb?st:''}</td></tr>`;
+    }).join('');
+    let direct='';
+    if(liga){
+      const g=directGames(A.id,B.id);
+      let da=0,db=0,de=0;
+      const lines=g.map(m=>{
+        if(m.sc){ const ga=m.h===A.id?m.sc[0]:m.sc[1], gb=m.h===A.id?m.sc[1]:m.sc[0]; if(ga>gb)da++; else if(ga<gb)db++; else de++; }
+        return `<div class="dh"><span>${m.t}</span><span><b>${esc(dn(S.parts[idx(m.h)]))}</b> ${m.sc?`${m.sc[0]} x ${m.sc[1]}`:'—'} <b>${esc(dn(S.parts[idx(m.a)]))}</b></span></div>`;
+      }).join('');
+      direct=`<div class="grp-t">Confronto direto</div>
+        <div class="vs-score"><div class="mini"><b>${da}</b><span>Vitórias de ${esc(dn(A))}</span></div><div class="mini"><b>${de}</b><span>Empates</span></div><div class="mini"><b>${db}</b><span>Vitórias de ${esc(dn(B))}</span></div></div>
+        ${lines||'<p class="muted small">Esses dois ainda não têm jogo marcado.</p>'}`;
+    }
+    const nStat=Math.max(aa.n,bb.n);
+    const info=`<p class="small" style="margin:0 0 10px">Só conta o que foi jogado <b>entre ${esc(dn(A))} e ${esc(dn(B))}</b>: ${nStat} jogo(s) com estatísticas${liga?'':' validadas'}.</p>`;
+    vs=`${direct}
+      <div class="grp-t" style="margin-bottom:8px">Comparativo de estatísticas</div>${info}
+      ${(!nStat&&!aa.j)?`<p class="muted">${liga?'Ainda não há resumos de partida entre eles.':'Ainda não há jogos validados entre eles. Ao conferir uma imagem, escolha contra quem foi a partida.'}</p>`:''}
+      <div class="table-wrap"><table class="cmp vs-table"><thead><tr>
+        <th><div class="cmp-h">${lg(A.id,'slogo')}<span>${esc(dn(A))}</span></div></th><th></th>
+        <th><div class="cmp-h">${lg(B.id,'slogo')}<span>${esc(dn(B))}</span></div></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="small" style="margin-top:8px">★ = melhor valor da linha (em <em>gols contra</em>, <em>faltas</em> e <em>impedimentos</em>, menos é melhor). ${esc(dn(A))} lidera em <b>${wa}</b> item(ns), ${esc(dn(B))} em <b>${wb}</b>${eq?` e ${eq} empatado(s)`:''}.</p>`;
+  } else vs=`<p class="muted">Escolha os dois participantes para comparar.</p>`;
+  return `
+  <section class="panel">
+    <h2>👤 Estatísticas individuais</h2>
+    <div class="sel-row"><label>Participante<select class="keep" onchange="setSel('${mode}','one',this.value)">${partOpts(sel.one,'— escolha um participante —')}</select></label></div>
+    ${one||'<p class="muted">Escolha um participante para ver as estatísticas dele.</p>'}
+  </section>
+  <section class="panel">
+    <h2>⚔️ Confronto: participante × participante</h2>
+    <div class="sel-row">
+      <label>Participante A<select class="keep" onchange="setSel('${mode}','a',this.value)">${partOpts(sel.a,'— escolha —')}</select></label>
+      <span class="vs">×</span>
+      <label>Participante B<select class="keep" onchange="setSel('${mode}','b',this.value)">${partOpts(sel.b,'— escolha —')}</select></label>
+    </div>
+    ${vs}
+  </section>`;
+}
 
 /* --- Estatísticas: abas Liga / Pré-temporada --- */
 function setStatsTab(t){ statsTab=t; route(true); }
@@ -1122,11 +1505,12 @@ function removePre(i,k){
   if(!confirm('Remover esta imagem e os valores dela?')) return;
   const id=S.parts[i].id; setImg(k,null); S.pre[id]=(S.pre[id]||[]).filter(x=>x!==k); if(S.pd) delete S.pd[k]; save(); route(true); refreshPreList();
 }
-function preAgg(id){
+function preAgg(id,opp){
   const a={n:0,j:0,v:0,e:0,d:0,gf:0,gc:0,pend:0,sum:{},cnt:{}};
   STAT_KEYS.forEach(k=>{ a.sum[k]=0; a.cnt[k]=0; });
   preList(id).forEach(k=>{
     const e=S.pd&&S.pd[k];
+    if(opp&&(!e||e.opp!==opp)) return;
     if(!e||!e.ok){ a.pend++; return; }
     const side=e.side||'h', mine=(e.stats&&e.stats[side])||{};
     a.n++;
@@ -1153,7 +1537,7 @@ function preListHTML(i){
     ${list.length?list.map((k,n)=>{
       const e=S.pd&&S.pd[k]; const has=e&&['h','a'].some(sd=>STAT_KEYS.some(x=>filled(e.stats[sd][x])));
       const b=e&&e.ok?'<span class="pl-badge ok">✓ Validado</span>':has?'<span class="pl-badge rev">Revisar</span>':'<span class="pl-badge pend">Pendente</span>';
-      const sc=e&&filled(e.gh)&&filled(e.ga)?`${esc(e.gh)} x ${esc(e.ga)}`:'';
+      const sc=(e&&filled(e.gh)&&filled(e.ga)?`${esc(e.gh)} x ${esc(e.ga)}`:'')+(e&&e.opp?` • vs ${esc(oppName(e.opp))}`:(e&&e.ok?' • sem adversário':''));
       return `<div class="pl-row"><span class="pl-n">Jogo ${n+1}</span>${b}<span class="pl-sc">${sc}</span><span class="grow"></span>
         <button class="small" onclick="openPre(${i},'${k}')">Conferir</button>
         <button class="ghost small" title="Remover" onclick="removePre(${i},'${k}')">🗑</button></div>`;}).join('')
@@ -1174,13 +1558,14 @@ function refreshPreList(){
   m.querySelector('.modal').innerHTML=preListHTML(i);
 }
 
-function sideLabels(side,p){
-  const me=esc(dn(p))+' (participante)';
-  return side==='h' ? [me,'Adversário'] : ['Adversário',me];
+function oppName(o){ if(o==='ia') return '🤖 IA'; const q=S.parts.find(x=>x.id===o); return q?dn(q):''; }
+function sideLabels(side,p,opp){
+  const me=esc(dn(p))+' (participante)', ad=opp?esc(oppName(opp)):'Adversário';
+  return side==='h' ? [me,ad] : [ad,me];
 }
 function openPre(i,k){
   const p=S.parts[i], ent=getPd(k), n=preList(p.id).indexOf(k)+1, side=ent.side||'h';
-  const [L,R]=sideLabels(side,p);
+  const [L,R]=sideLabels(side,p,ent.opp);
   const el=document.createElement('div'); el.className='modal-back'; el.id='matchModal';
   el.addEventListener('mousedown',e=>{ if(e.target===el) closeModal(); });
   el.innerHTML=`<div class="modal">
@@ -1193,6 +1578,12 @@ function openPre(i,k){
       </div>
       <div class="mstats">
         <div class="preform">
+          <label>Jogou contra
+            <select id="preOpp" onchange="setPreOpp('${k}',this.value,${i})">
+              <option value="">— escolha o adversário —</option>
+              ${S.parts.filter((_,j)=>j!==i).map(q=>`<option value="${q.id}" ${ent.opp===q.id?'selected':''}>${esc(dn(q))}</option>`).join('')}
+              <option value="ia" ${ent.opp==='ia'?'selected':''}>🤖 IA</option>
+            </select></label>
           <label>Participante está no lado
             <select onchange="setPreSide('${k}',this.value,${i})">
               <option value="h" ${side==='h'?'selected':''}>Esquerda da imagem</option>
@@ -1208,7 +1599,7 @@ function openPre(i,k){
         <table><thead><tr><th style="text-align:center" id="hdrL">${L}</th><th style="text-align:center">Estatística</th><th style="text-align:center" id="hdrR">${R}</th></tr></thead>
         <tbody>${statRows(ent,k,'pre')}</tbody></table>
         <div class="ocr" id="ocrMsg"></div>
-        <p class="small legend">🟡 lido da imagem — confira &nbsp;•&nbsp; 🟠 vazio — preencha se tiver o dado</p>
+        <p class="small legend">🟡 lido da imagem — confira &nbsp;•&nbsp; 🔴 leitura incerta &nbsp;•&nbsp; 🟠 vazio — preencha se tiver o dado</p>
         <p class="small">Só imagens <strong>validadas</strong> entram nas médias por jogo.</p>
       </div>
     </div>
@@ -1216,14 +1607,20 @@ function openPre(i,k){
   </div>`;
   document.body.appendChild(el);
 }
+function setPreOpp(k,v,i){
+  const e=getPd(k); e.opp=v; save();
+  const [L,R]=sideLabels(e.side||'h',S.parts[i],v);
+  document.getElementById('hdrL').innerHTML=L; document.getElementById('hdrR').innerHTML=R;
+}
 function setPreSide(k,v,i){
   const e=getPd(k); e.side=v; e.ok=false; save();
-  const [L,R]=sideLabels(v,S.parts[i]);
+  const [L,R]=sideLabels(v,S.parts[i],e.opp);
   document.getElementById('hdrL').innerHTML=L; document.getElementById('hdrR').innerHTML=R;
 }
 function setPreScore(k,f,v){ const e=getPd(k); e[f]=v; e.ok=false; save(); }
 function validatePre(k){
   const e=getPd(k), side=e.side||'h';
+  if(!e.opp){ toast('Escolha contra quem foi a partida (outro participante ou IA) antes de validar.'); return; }
   const miss=STAT_KEYS.filter(x=>!filled(e.stats[side][x])).length;
   if(miss && !confirm(`Ainda há ${miss} campo(s) vazio(s) do participante. Validar assim mesmo? (eles ficam fora das médias)`)) return;
   e.ok=true; save(); toast('✓ Imagem validada.'); closeModal();
@@ -1231,7 +1628,7 @@ function validatePre(k){
 
 const PRE_ROWS=[
   {sec:'Resultados'},
-  {l:'Jogos validados', v:a=>a.n, f:v=>String(v), always:true},
+  {l:'Jogos validados', l2:'Jogos com estatísticas', v:a=>a.n, f:v=>String(v), always:true},
   {l:'V-E-D', t:a=>a.j?`${a.v}-${a.e}-${a.d}`:'—'},
   {l:'Gols pró / jogo', v:a=>a.j?a.gf/a.j:null, f:f1, best:'max'},
   {l:'Gols contra / jogo', v:a=>a.j?a.gc/a.j:null, f:f1, best:'min'},
@@ -1254,8 +1651,8 @@ const PRE_ROWS=[
   {l:'Cobranças de falta / jogo', v:a=>pAvg(a,'cobrancasFalta'), f:f1}
 ];
 function preVal(r,a){
-  if(r.t) return a.n?r.t(a):'—';
-  if(!a.n&&!r.always) return null;
+  if(r.t) return (a.n||a.j)?r.t(a):'—';
+  if(!a.n&&!a.j&&!r.always) return null;
   return r.v(a);
 }
 function preCell(r,a){ if(r.t) return preVal(r,a); const v=preVal(r,a); return v==null?'—':r.f(v); }
@@ -1291,6 +1688,7 @@ function statsPre(){
     <p class="muted" style="margin:0 0 14px">Médias por jogo de cada participante na pré-temporada, calculadas com os jogos validados.</p>
     ${validated?preCmpTable(aggs):'<p class="muted">Ainda não há jogos validados.</p>'}
   </section>
+  ${compareTools('pre',aggs)}
   ${S.parts.map((p,i)=>{
     const list=preList(p.id), a=aggs[i];
     return `<section class="panel pcard">
@@ -1410,7 +1808,7 @@ function route(keepScroll){
   const y=window.scrollY;
   document.getElementById('app').innerHTML=ROUTES[currentRoute]();
   document.querySelectorAll('#nav a.link').forEach(a=>a.classList.toggle('active',a.dataset.r===currentRoute));
-  if(VIEWER) document.querySelectorAll('#app input,#app select').forEach(e=>{ e.disabled=true; });
+  if(VIEWER) document.querySelectorAll('#app input,#app select:not(.keep)').forEach(e=>{ e.disabled=true; });
   if(currentRoute==='liga') refreshDerived();
   if(keepScroll===true && prev===currentRoute) window.scrollTo(0,y); else window.scrollTo(0,0);
 }
