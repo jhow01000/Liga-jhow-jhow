@@ -1423,6 +1423,7 @@ function compareTools(mode,aggs){
     one=`<div class="who">${lg(p.id,'mlogo')}<div><h3>${esc(dn(p))}</h3><div class="small">${liga?'Liga':'Pré-temporada'}${pos}</div></div></div>`+oppSel+
       (a.n?preGroups().map(g=>`<div class="grp"><div class="grp-t">${g.t}</div><div class="mini-grid">${g.rows.map(r=>mini(preCell(r,a),lab(r))).join('')}</div></div>`).join('')
           :`<p class="muted small" style="margin-top:12px">${liga?'Ainda sem resumos de partida deste participante.':(sel.opp?'Ainda sem jogos validados contra esse adversário.':'Ainda sem jogos validados deste participante.')}</p>`);
+    one=`<div class="pcard" style="margin:14px 0 0">${statusSlot(p,i)}<div>${one}</div></div>`;
   }
   // --- confronto
   let vs='';
