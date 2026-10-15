@@ -335,13 +335,29 @@ const STAT_KEYS = STAT_DEFS.map(s=>s.k);
 function emptyState(){
   return {
     parts:[0,1,2,3,4].map(i=>({id:'p'+i,name:'',team:'',note:''})),
-    started:false, fixtures:null, scores:{}, ko:{}, md:{}, pre:{}, preN:0, pd:{}
+    started:false, fixtures:null, scores:{}, ko:{}, md:{}, pre:{}, pg:[], preN:0, pd:{}
   };
+}
+// pré-temporada: antes cada participante tinha suas imagens; agora há uma lista única de jogos (esquerda × direita)
+function normState(d){
+  const st=Object.assign(emptyState(),d);
+  if(!Array.isArray(d.pg)){
+    st.pg=[]; st.pd=st.pd||{};
+    Object.keys(d.pre||{}).forEach(pid=>(d.pre[pid]||[]).forEach(k=>{
+      if(st.pg.includes(k)) return;
+      const e=st.pd[k]=st.pd[k]||{stats:{h:{},a:{}},gh:'',ga:'',ok:false};
+      const side=e.side||'h', opp=e.opp||'';
+      e.l = side==='h' ? pid : opp; e.r = side==='h' ? opp : pid;
+      delete e.side; delete e.opp; st.pg.push(k);
+    }));
+    st.pre={};
+  }
+  return st;
 }
 function loadState(){
   try{
     const d = JSON.parse(localStorage.getItem(KEY)||'null');
-    if(d && Array.isArray(d.parts) && d.parts.length===5) return Object.assign(emptyState(), d);
+    if(d && Array.isArray(d.parts) && d.parts.length===5) return normState(d);
   }catch(e){}
   return emptyState();
 }
@@ -593,7 +609,7 @@ function preprocess(src,crop){
 }
 function getPd(k){
   S.pd=S.pd||{};
-  if(!S.pd[k]) S.pd[k]={side:'h',opp:'',gh:'',ga:'',stats:{h:{},a:{}},ok:false};
+  if(!S.pd[k]) S.pd[k]={l:'',r:'',gh:'',ga:'',stats:{h:{},a:{}},ok:false};
   const e=S.pd[k]; e.stats=e.stats||{h:{},a:{}}; e.stats.h=e.stats.h||{}; e.stats.a=e.stats.a||{};
   return e;
 }
@@ -1363,18 +1379,14 @@ function newAgg(){ const a={n:0,pend:0,j:0,v:0,e:0,d:0,gf:0,gc:0,sum:{},cnt:{}};
 function addStats(a,m){ if(!m||!STAT_KEYS.some(k=>filled(m[k]))) return false; a.n++; STAT_KEYS.forEach(k=>{ if(filled(m[k])){ a.sum[k]+=+m[k]; a.cnt[k]++; } }); return true; }
 function addScore(a,gf,gc){ a.j++; a.gf+=gf; a.gc+=gc; if(gf>gc) a.v++; else if(gf<gc) a.d++; else a.e++; }
 function preVsAggs(A,B){
-  const aa=newAgg(), bb=newAgg(), seen=new Set();
-  [[A,B],[B,A]].forEach(([own,oth])=>preList(own).forEach(k=>{
-    const e=S.pd&&S.pd[k]; if(!e||!e.ok||e.opp!==oth) return;
-    const side=e.side||'h', os=side==='h'?'a':'h';
-    const mine=(e.stats&&e.stats[side])||{}, theirs=(e.stats&&e.stats[os])||{};
-    const hasSc=filled(e.gh)&&filled(e.ga);
-    const gOwn=hasSc?(side==='h'?+e.gh:+e.ga):null, gOth=hasSc?(side==='h'?+e.ga:+e.gh):null;
-    const sA=own===A?mine:theirs, sB=own===A?theirs:mine, gA=own===A?gOwn:gOth, gB=own===A?gOth:gOwn;
-    const sig=JSON.stringify([sA,sB,gA,gB]); if(seen.has(sig)) return; seen.add(sig);
+  const aa=newAgg(), bb=newAgg();
+  preList().forEach(k=>{
+    const e=S.pd&&S.pd[k]; if(!e||!e.ok) return;
+    const aLeft=e.l===A&&e.r===B, aRight=e.r===A&&e.l===B; if(!aLeft&&!aRight) return;
+    const sd=e.stats||{}, sA=sd[aLeft?'h':'a']||{}, sB=sd[aLeft?'a':'h']||{};
     addStats(aa,sA); addStats(bb,sB);
-    if(hasSc){ addScore(aa,gA,gB); addScore(bb,gB,gA); }
-  }));
+    if(filled(e.gh)&&filled(e.ga)){ const gA=aLeft?+e.gh:+e.ga, gB=aLeft?+e.ga:+e.gh; addScore(aa,gA,gB); addScore(bb,gB,gA); }
+  });
   return [aa,bb];
 }
 function leagueVsAggs(A,B){
@@ -1491,29 +1503,33 @@ function pageStats(){
   </div>`;
   return tabs+(statsTab==='pre'?statsPre():statsLeague());
 }
-function preList(id){ S.pre=S.pre||{}; return (S.pre[id]||[]).filter(k=>IMG[k]); }
-async function loadPreImgs(ev,i){
+function preList(){ S.pg=S.pg||[]; return S.pg.filter(k=>IMG[k]); }
+function preSideOf(e,id){ return !e?null:(e.l===id?'h':(e.r===id?'a':null)); }
+async function loadPreImgs(ev){
   const files=[...ev.target.files]; if(!files.length) return;
-  const id=S.parts[i].id; S.pre=S.pre||{}; S.pre[id]=S.pre[id]||[];
+  S.pg=S.pg||[];
   let ok=0;
   for(const f of files){
-    try{ const k=`pre_${id}_${(S.preN=(S.preN||0)+1)}`; setImg(k, await readImage(f,1500,'image/jpeg',.82)); S.pre[id].push(k); ok++; }
+    try{ const k=`pre_g${(S.preN=(S.preN||0)+1)}`; setImg(k, await readImage(f,1500,'image/jpeg',.82)); S.pg.push(k); ok++; }
     catch(e){}
   }
-  save(); toast(ok?`${ok} imagem(ns) adicionada(s).`:'Não consegui ler as imagens.'); route(true); refreshPreList();
+  ev.target.value='';
+  save(); toast(ok?`${ok} imagem(ns) adicionada(s). Use "Ver imagens" para escolher os jogadores de cada jogo.`:'Não consegui ler as imagens.'); route(true); refreshPreList();
 }
-function removePre(i,k){
+function removePre(k){
   if(!confirm('Remover esta imagem e os valores dela?')) return;
-  const id=S.parts[i].id; setImg(k,null); S.pre[id]=(S.pre[id]||[]).filter(x=>x!==k); if(S.pd) delete S.pd[k]; save(); route(true); refreshPreList();
+  setImg(k,null); S.pg=(S.pg||[]).filter(x=>x!==k); if(S.pd) delete S.pd[k]; save(); route(true); refreshPreList();
 }
+// médias de um participante nos jogos validados em que ele aparece (opp = filtrar por adversário: id ou 'ia')
 function preAgg(id,opp){
   const a={n:0,j:0,v:0,e:0,d:0,gf:0,gc:0,pend:0,sum:{},cnt:{}};
   STAT_KEYS.forEach(k=>{ a.sum[k]=0; a.cnt[k]=0; });
-  preList(id).forEach(k=>{
-    const e=S.pd&&S.pd[k];
-    if(opp&&(!e||e.opp!==opp)) return;
-    if(!e||!e.ok){ a.pend++; return; }
-    const side=e.side||'h', mine=(e.stats&&e.stats[side])||{};
+  preList().forEach(k=>{
+    const e=S.pd&&S.pd[k]; const side=preSideOf(e,id); if(!side) return;
+    const other=side==='h'?e.r:e.l;
+    if(opp&&other!==opp) return;
+    if(!e.ok){ a.pend++; return; }
+    const mine=(e.stats&&e.stats[side])||{};
     a.n++;
     STAT_KEYS.forEach(x=>{ if(filled(mine[x])){ a.sum[x]+=+mine[x]; a.cnt[x]++; } });
     if(filled(e.gh)&&filled(e.ga)){
@@ -1528,50 +1544,49 @@ const dash=v=>v==null?'—':f1(v);
 
 
 /* pop-up com a lista de imagens da pré-temporada (sem pré-visualização) */
-function preListHTML(i){
-  const p=S.parts[i], list=preList(p.id);
+function sideName(v,fallback){ return v==='ia'?'🤖 IA':(v?esc(oppName(v)):fallback); }
+function preListHTML(){
+  const list=preList();
   return `<button class="mx ghost" onclick="closePreList()" aria-label="Fechar">×</button>
-    <h3>🖼️ Imagens de jogos — ${esc(dn(p))}</h3>
+    <h3>🖼️ Imagens de jogos da pré-temporada</h3>
     <div class="buttons" style="margin:0 0 14px">
-      <label class="btn blue small" style="cursor:pointer">📎 Carregar imagens<input type="file" accept="image/*" multiple style="display:none" onchange="loadPreImgs(event,${i})"></label>
+      <label class="btn blue small" style="cursor:pointer">📎 Carregar imagens<input type="file" accept="image/*" multiple style="display:none" onchange="loadPreImgs(event)"></label>
     </div>
     ${list.length?list.map((k,n)=>{
       const e=S.pd&&S.pd[k]; const has=e&&['h','a'].some(sd=>STAT_KEYS.some(x=>filled(e.stats[sd][x])));
       const b=e&&e.ok?'<span class="pl-badge ok">✓ Validado</span>':has?'<span class="pl-badge rev">Revisar</span>':'<span class="pl-badge pend">Pendente</span>';
-      const sc=(e&&filled(e.gh)&&filled(e.ga)?`${esc(e.gh)} x ${esc(e.ga)}`:'')+(e&&e.opp?` • vs ${esc(oppName(e.opp))}`:(e&&e.ok?' • sem adversário':''));
-      return `<div class="pl-row"><span class="pl-n">Jogo ${n+1}</span>${b}<span class="pl-sc">${sc}</span><span class="grow"></span>
-        <button class="small" onclick="openPre(${i},'${k}')">Conferir</button>
-        <button class="ghost small" title="Remover" onclick="removePre(${i},'${k}')">🗑</button></div>`;}).join('')
+      const who=e&&(e.l||e.r)?`${sideName(e&&e.l,'?')} × ${sideName(e&&e.r,'?')}`:'escolha os jogadores';
+      const sc=e&&filled(e.gh)&&filled(e.ga)?` • ${esc(e.gh)} x ${esc(e.ga)}`:'';
+      return `<div class="pl-row"><span class="pl-n">Jogo ${n+1}</span>${b}<span class="pl-sc">${who}${sc}</span><span class="grow"></span>
+        <button class="small" onclick="openPre('${k}')">Conferir</button>
+        <button class="ghost small" title="Remover" onclick="removePre('${k}')">🗑</button></div>`;}).join('')
       :'<div class="none-box">Nenhuma imagem ainda. Use o botão acima para carregar.</div>'}
     <div class="buttons"><button class="ghost" onclick="closePreList()">Fechar</button></div>`;
 }
-function openPreList(i){
+function openPreList(){
   closePreList();
-  const el=document.createElement('div'); el.className='modal-back'; el.id='preListModal'; el.dataset.i=i;
+  const el=document.createElement('div'); el.className='modal-back'; el.id='preListModal';
   el.addEventListener('mousedown',e=>{ if(e.target===el) closePreList(); });
-  el.innerHTML=`<div class="modal narrow">${preListHTML(i)}</div>`;
+  el.innerHTML=`<div class="modal narrow">${preListHTML()}</div>`;
   document.body.appendChild(el);
 }
 function closePreList(){ const m=document.getElementById('preListModal'); if(m) m.remove(); }
 function refreshPreList(){
   const m=document.getElementById('preListModal'); if(!m) return;
-  const i=+m.dataset.i; if(!(i>=0)||!S.parts[i]) return;
-  m.querySelector('.modal').innerHTML=preListHTML(i);
+  m.querySelector('.modal').innerHTML=preListHTML();
 }
 
 function oppName(o){ if(o==='ia') return '🤖 IA'; const q=S.parts.find(x=>x.id===o); return q?dn(q):''; }
-function sideLabels(side,p,opp){
-  const me=esc(dn(p))+' (participante)', ad=opp?esc(oppName(opp)):'Adversário';
-  return side==='h' ? [me,ad] : [ad,me];
+function teamOpts(sel){
+  return `<option value="">— escolha —</option>`+S.parts.map(q=>`<option value="${q.id}" ${sel===q.id?'selected':''}>${esc(dn(q))}</option>`).join('')+`<option value="ia" ${sel==='ia'?'selected':''}>🤖 IA</option>`;
 }
-function openPre(i,k){
-  const p=S.parts[i], ent=getPd(k), n=preList(p.id).indexOf(k)+1, side=ent.side||'h';
-  const [L,R]=sideLabels(side,p,ent.opp);
+function openPre(k){
+  const ent=getPd(k), n=preList().indexOf(k)+1;
   const el=document.createElement('div'); el.className='modal-back'; el.id='matchModal';
   el.addEventListener('mousedown',e=>{ if(e.target===el) closeModal(); });
   el.innerHTML=`<div class="modal">
     <button class="mx ghost" onclick="closeModal()" aria-label="Fechar">×</button>
-    <h3>📷 Pré-temporada — ${esc(dn(p))} • Jogo ${n}</h3>
+    <h3>📷 Pré-temporada • Jogo ${n}</h3>
     <div class="mgrid">
       <div class="mimg">
         <img src="${IMG[k]}" onclick="viewKey('${k}')" alt="Estatísticas do jogo">
@@ -1579,17 +1594,10 @@ function openPre(i,k){
       </div>
       <div class="mstats">
         <div class="preform">
-          <label>Jogou contra
-            <select id="preOpp" onchange="setPreOpp('${k}',this.value,${i})">
-              <option value="">— escolha o adversário —</option>
-              ${S.parts.filter((_,j)=>j!==i).map(q=>`<option value="${q.id}" ${ent.opp===q.id?'selected':''}>${esc(dn(q))}</option>`).join('')}
-              <option value="ia" ${ent.opp==='ia'?'selected':''}>🤖 IA</option>
-            </select></label>
-          <label>Participante está no lado
-            <select onchange="setPreSide('${k}',this.value,${i})">
-              <option value="h" ${side==='h'?'selected':''}>Esquerda da imagem</option>
-              <option value="a" ${side==='a'?'selected':''}>Direita da imagem</option>
-            </select></label>
+          <label>Time da esquerda da imagem
+            <select id="preL" onchange="setPreTeam('${k}','l',this.value)">${teamOpts(ent.l)}</select></label>
+          <label>Time da direita da imagem
+            <select id="preR" onchange="setPreTeam('${k}','r',this.value)">${teamOpts(ent.r)}</select></label>
           <label>Placar (esquerda × direita)
             <span class="score" style="justify-content:flex-start">
               <input type="number" min="0" id="preGh" value="${esc(ent.gh??'')}" oninput="setPreScore('${k}','gh',this.value)">
@@ -1597,7 +1605,8 @@ function openPre(i,k){
               <input type="number" min="0" id="preGa" value="${esc(ent.ga??'')}" oninput="setPreScore('${k}','ga',this.value)">
             </span></label>
         </div>
-        <table><thead><tr><th style="text-align:center" id="hdrL">${L}</th><th style="text-align:center">Estatística</th><th style="text-align:center" id="hdrR">${R}</th></tr></thead>
+        <p class="small" style="margin:0 0 8px">As estatísticas de cada lado vão automaticamente para o participante escolhido. Jogos contra a 🤖 IA contam só para o participante.</p>
+        <table><thead><tr><th style="text-align:center" id="hdrL">${sideName(ent.l,'Esquerda')}</th><th style="text-align:center">Estatística</th><th style="text-align:center" id="hdrR">${sideName(ent.r,'Direita')}</th></tr></thead>
         <tbody>${statRows(ent,k,'pre')}</tbody></table>
         <div class="ocr" id="ocrMsg"></div>
         <p class="small legend">🟡 lido da imagem — confira &nbsp;•&nbsp; 🔴 leitura incerta &nbsp;•&nbsp; 🟠 vazio — preencha se tiver o dado</p>
@@ -1608,23 +1617,25 @@ function openPre(i,k){
   </div>`;
   document.body.appendChild(el);
 }
-function setPreOpp(k,v,i){
-  const e=getPd(k); e.opp=v; save();
-  const [L,R]=sideLabels(e.side||'h',S.parts[i],v);
-  document.getElementById('hdrL').innerHTML=L; document.getElementById('hdrR').innerHTML=R;
-}
-function setPreSide(k,v,i){
-  const e=getPd(k); e.side=v; e.ok=false; save();
-  const [L,R]=sideLabels(v,S.parts[i],e.opp);
-  document.getElementById('hdrL').innerHTML=L; document.getElementById('hdrR').innerHTML=R;
+function setPreTeam(k,side,v){
+  const e=getPd(k), other=side==='l'?e.r:e.l;
+  if(v && v!=='ia' && v===other){
+    toast('Esse participante já está do outro lado da imagem.');
+    const sel=document.getElementById(side==='l'?'preL':'preR'); if(sel) sel.value=e[side]||''; return;
+  }
+  e[side]=v; e.ok=false; save();
+  document.getElementById('hdrL').innerHTML=sideName(e.l,'Esquerda'); document.getElementById('hdrR').innerHTML=sideName(e.r,'Direita');
 }
 function setPreScore(k,f,v){ const e=getPd(k); e[f]=v; e.ok=false; save(); }
 function validatePre(k){
-  const e=getPd(k), side=e.side||'h';
-  if(!e.opp){ toast('Escolha contra quem foi a partida (outro participante ou IA) antes de validar.'); return; }
-  const miss=STAT_KEYS.filter(x=>!filled(e.stats[side][x])).length;
-  if(miss && !confirm(`Ainda há ${miss} campo(s) vazio(s) do participante. Validar assim mesmo? (eles ficam fora das médias)`)) return;
-  e.ok=true; save(); toast('✓ Imagem validada.'); closeModal();
+  const e=getPd(k);
+  if(!e.l||!e.r){ toast('Escolha os dois times da imagem (participante ou IA) antes de validar.'); return; }
+  if(e.l==='ia'&&e.r==='ia'){ toast('Pelo menos um dos lados precisa ser um participante.'); return; }
+  const sides=['h','a'].filter(sd=>(sd==='h'?e.l:e.r)!=='ia');
+  const miss=sides.reduce((a,sd)=>a+STAT_KEYS.filter(x=>!filled(e.stats[sd][x])).length,0);
+  if(miss && !confirm(`Ainda há ${miss} campo(s) vazio(s) dos participantes. Validar assim mesmo? (eles ficam fora das médias)`)) return;
+  e.ok=true; save(); toast('✓ Jogo validado para os dois lados.'); closeModal();
+  route(true); refreshPreList();
 }
 
 const PRE_ROWS=[
@@ -1679,30 +1690,34 @@ function preGroups(){
   const g=[]; PRE_ROWS.forEach(r=>{ if(r.sec) g.push({t:r.sec,rows:[]}); else g[g.length-1].rows.push(r); }); return g;
 }
 function statsPre(){
-  const total=S.parts.reduce((a,p)=>a+preList(p.id).length,0);
+  const total=preList().length;
   const aggs=S.parts.map(p=>preAgg(p.id));
-  const validated=aggs.reduce((a,x)=>a+x.n,0);
+  const games=preList().filter(k=>S.pd&&S.pd[k]&&S.pd[k].ok).length, pending=total-games;
   const mini=(v,l)=>`<div class="mini"><b>${v}</b><span>${l}</span></div>`;
   return `
+  ${VIEWER?'':`<section class="panel">
+    <h2>🎮 Lançar jogos da pré-temporada</h2>
+    <p class="muted" style="margin:0 0 12px">Carregue a imagem de estatísticas do jogo uma única vez, escolha quem jogou (participantes ou IA) e as estatísticas vão para cada um.</p>
+    <div class="pre-actions">
+      <label class="btn blue small" style="cursor:pointer">📎 Carregar imagens de jogos<input type="file" accept="image/*" multiple style="display:none" onchange="loadPreImgs(event)"></label>
+      <button class="ghost small" onclick="openPreList()">🖼️ Ver imagens (${total})</button>
+      <span class="small">${games} jogo(s) validado(s)${pending?` • ${pending} pendente(s)`:''}</span>
+    </div>
+  </section>`}
   <section class="panel">
     <h2>📊 Estatísticas de Pré-temporada</h2>
     <p class="muted" style="margin:0 0 14px">Médias por jogo de cada participante na pré-temporada, calculadas com os jogos validados.</p>
-    ${validated?preCmpTable(aggs):'<p class="muted">Ainda não há jogos validados.</p>'}
+    ${games?preCmpTable(aggs):'<p class="muted">Ainda não há jogos validados.</p>'}
   </section>
   ${compareTools('pre',aggs)}
   ${S.parts.map((p,i)=>{
-    const list=preList(p.id), a=aggs[i];
+    const a=aggs[i];
     return `<section class="panel pcard">
       ${statusSlot(p,i)}
       <div>
-        <div class="phead">${lg(p.id,'mlogo')}<div><h3 style="font-size:20px">${esc(dn(p))}</h3><div class="small">Pré-temporada${p.team?` • ${esc(p.team)}`:''}</div></div></div>
-        ${VIEWER?'':`<div class="pre-actions">
-          <label class="btn blue small" style="cursor:pointer">📎 Carregar imagens de jogos<input type="file" accept="image/*" multiple style="display:none" onchange="loadPreImgs(event,${i})"></label>
-          <button class="ghost small" onclick="openPreList(${i})">🖼️ Ver imagens (${list.length})</button>
-          <span class="small">${a.n} validado(s)${a.pend?` • ${a.pend} pendente(s)`:''}</span>
-        </div>`}
+        <div class="phead">${lg(p.id,'mlogo')}<div><h3 style="font-size:20px">${esc(dn(p))}</h3><div class="small">Pré-temporada${p.team?` • ${esc(p.team)}`:''} • ${a.n} jogo(s) validado(s)${a.pend&&!VIEWER?` • ${a.pend} pendente(s)`:''}</div></div></div>
         ${a.n?preGroups().map(g=>`<div class="grp"><div class="grp-t">${g.t}</div><div class="mini-grid">${g.rows.map(r=>mini(preCell(r,a),r.l)).join('')}</div></div>`).join('')
-             :`<p class="muted small" style="margin-top:14px">${VIEWER?'Ainda sem jogos validados.':'Valide ao menos uma imagem para ver as médias por jogo.'}</p>`}
+             :`<p class="muted small" style="margin-top:14px">Ainda sem jogos validados.</p>`}
       </div>
     </section>`;}).join('')}`;
 }
@@ -1765,7 +1780,7 @@ async function importBackup(ev){
     if(!validExport(d)) throw new Error('arquivo inválido');
     if(!confirm('Restaurar vai substituir TODOS os dados atuais deste navegador. Continuar?')) return;
     idbClear(); Object.keys(IMG).forEach(k=>delete IMG[k]);
-    S=Object.assign(emptyState(),d.state);
+    S=normState(d.state);
     Object.entries(d.images||{}).forEach(([k,v])=>{ if(v&&v!=='data:,') setImg(k,v); });
     lastChamp=null; save(); toast('Dados restaurados.'); route(true);
   }catch(e){ toast('Não consegui ler esse arquivo de backup.'); }
@@ -1775,7 +1790,7 @@ async function tryViewer(){
   try{
     const r=await fetch('dados-liga.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return false;
     const d=await r.json(); if(!validExport(d)) return false;
-    S=Object.assign(emptyState(),d.state);
+    S=normState(d.state);
     Object.keys(IMG).forEach(k=>delete IMG[k]); Object.assign(IMG,d.images||{});
     VIEWER=true; VIEWER_AT=d.exportedAt||''; return true;
   }catch(e){ return false; }
