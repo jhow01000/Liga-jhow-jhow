@@ -913,9 +913,7 @@ function pageHome(){
     <img class="big" src="${LOGO}" alt="Liga Jhow-Jhow 2026">
     <div class="tag">Jogo mais que futebol</div>
     <div class="buttons" style="justify-content:center">
-      ${S.started
-        ? `<a class="btn" href="#/liga">🏆 Continuar a liga</a><a class="btn ghost" href="#/participantes">👥 Participantes</a>`
-        : `<a class="btn" href="#/iniciar">🚀 Iniciar a liga</a><a class="btn ghost" href="#/participantes">👥 Cadastro de participantes</a>`}
+<a class="btn" href="#/liga">🏆 Liga</a><a class="btn ghost" href="#/participantes">👥 Participantes</a><a class="btn ghost" href="#/estatisticas">📈 Estatísticas</a>
     </div>
   </section>
   ${live}
@@ -1446,7 +1444,7 @@ function compareTools(mode,aggs){
     let wa=0,wb=0,eq=0;
     const rows=PRE_ROWS.map(r=>{
       if(r.sec) return `<tr class="sec"><td colspan="3">${r.sec}</td></tr>`;
-      const va=r.t?null:preVal(r,aa), vb=r.t?null:preVal(r,bb);
+      const va=r.t?null:preKey(r,preVal(r,aa)), vb=r.t?null:preKey(r,preVal(r,bb));
       let ca='',cb='';
       if(r.best&&va!=null&&vb!=null){
         if(va===vb) eq++;
@@ -1662,6 +1660,7 @@ const PRE_ROWS=[
   {l:'Impedimentos / jogo', v:a=>pAvg(a,'impedimentos'), f:f1, best:'min'},
   {l:'Cobranças de falta / jogo', v:a=>pAvg(a,'cobrancasFalta'), f:f1}
 ];
+function preKey(r,v){ if(v==null) return null; const n=parseFloat(String(r.f(v)).replace(',','.')); return isNaN(n)?v:n; }
 function preVal(r,a){
   if(r.t) return (a.n||a.j)?r.t(a):'—';
   if(!a.n&&!a.j&&!r.always) return null;
@@ -1675,12 +1674,12 @@ function preCmpTable(aggs){
     if(r.sec) return `<tr class="sec"><td colspan="${cols}">${r.sec}</td></tr>`;
     let target=null;
     if(r.best){
-      const vs=aggs.map(a=>preVal(r,a)).filter(v=>v!=null);
+      const vs=aggs.map(a=>preKey(r,preVal(r,a))).filter(v=>v!=null);
       if(vs.length>=2 && new Set(vs).size>1) target=r.best==='max'?Math.max(...vs):Math.min(...vs);
     }
     return `<tr><td>${r.l}</td>${aggs.map(a=>{
       const raw=r.t?null:preVal(r,a);
-      const best=target!=null&&raw!=null&&raw===target;
+      const best=target!=null&&raw!=null&&preKey(r,raw)===target;
       return `<td class="${best?'best':''}">${preCell(r,a)}${best?'<span class="st"> ★</span>':''}</td>`;}).join('')}</tr>`;
   }).join('');
   return `<div class="table-wrap"><table class="cmp"><thead>${head}</thead><tbody>${body}</tbody></table></div>
