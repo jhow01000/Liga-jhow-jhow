@@ -1780,7 +1780,7 @@ async function importBackup(ev){
     if(!confirm('Restaurar vai substituir TODOS os dados atuais deste navegador. Continuar?')) return;
     idbClear(); Object.keys(IMG).forEach(k=>delete IMG[k]);
     S=normState(d.state);
-    Object.entries(d.images||{}).forEach(([k,v])=>{ if(v&&v!=='data:,') setImg(k,v); });
+    Object.entries(d.images||{}).forEach(([k,v])=>{ if(v) setImg(k,v); });
     lastChamp=null; save(); toast('Dados restaurados.'); route(true);
   }catch(e){ toast('Não consegui ler esse arquivo de backup.'); }
 }
