@@ -341,7 +341,7 @@ const STAT_KEYS = STAT_DEFS.map(s=>s.k);
 function emptyState(){
   return {
     parts:Array.from({length:N_PARTS},(_,i)=>({id:'p'+i,name:'',team:'',note:''})),
-    nPlayers:N_PARTS, sel:null, active:null, started:false, fixtures:null, scores:{}, ko:{}, md:{}, pre:{}, pg:[], preN:0, pd:{}
+    history:[], leagueId:null, nPlayers:N_PARTS, sel:null, active:null, started:false, fixtures:null, scores:{}, ko:{}, md:{}, pre:{}, pg:[], preN:0, pd:{}
   };
 }
 // pré-temporada: antes cada participante tinha suas imagens; agora há uma lista única de jogos (esquerda × direita)
@@ -349,6 +349,7 @@ function normState(d){
   const st=Object.assign(emptyState(),d);
   // dados salvos com 5 participantes ganham o 6º vazio, sem perder o que já existe
   st.parts=(d.parts||[]).slice();
+  if(!Array.isArray(st.history)) st.history=[];
   if(!(st.nPlayers>=MIN_PARTS&&st.nPlayers<=N_PARTS)) st.nPlayers=N_PARTS;
   while(st.parts.length<N_PARTS) st.parts.push({id:'p'+st.parts.length,name:'',team:'',note:''});
   if(!Array.isArray(d.pg)){
@@ -1058,7 +1059,8 @@ function pageSetup(){
     <div class="buttons">
       <button onclick="startLeague()">🎲 ${S.started?'Refazer sorteio':'Sortear jogos e iniciar a liga'}</button>
       ${S.started?`<a class="btn ghost" href="#/liga">Ir para a liga</a>`:''}
-      <button class="danger" onclick="resetAll()">🔄 Reiniciar tudo</button>
+      <button class="danger" onclick="resetLeague()">🔄 Reiniciar liga</button>
+      <button class="danger ghost" onclick="resetAll()">🗑 Apagar tudo (inclui pré-temporada)</button>
     </div>
     <div class="draw-box" id="drawBox"></div>
   </section>
@@ -1082,11 +1084,72 @@ function startLeague(){
 }
 function finishDraw(){
   Object.keys(IMG).filter(k=>k.startsWith('m_')).forEach(k=>setImg(k,null));
-  S.active=selIds(); drawFixtures(); S.started=true; S.scores={}; S.ko={}; S.md={}; lastChamp=null;
+  S.leagueId=Date.now(); S.active=selIds(); drawFixtures(); S.started=true; S.scores={}; S.ko={}; S.md={}; lastChamp=null;
   save(); toast('Sorteio feito! Boa liga 🏆'); route(true);
 }
+function resetLeague(){
+  if(!S.started){ toast('A liga ainda não foi iniciada.'); return; }
+  if(!confirm('Reiniciar a liga apaga o sorteio, os placares, o mata-mata e os resumos de partida desta liga.\n\nParticipantes, logos e a pré-temporada continuam. Se a liga já terminou, as estatísticas dela ficam guardadas na aba "Liga 2026".\n\nContinuar?')) return;
+  const ended=koWinner('final',koSetup(calcStandings()).fin);
+  if(ended) archiveLeague(ended);
+  Object.keys(IMG).filter(k=>k.startsWith('m_')).forEach(k=>setImg(k,null));
+  S.started=false; S.fixtures=null; S.scores={}; S.ko={}; S.md={}; S.active=null; S.leagueId=null; S.sel=null;
+  lastChamp=null; save(); toast('Liga reiniciada. Participantes e pré-temporada mantidos.');
+  if(location.hash==='#/iniciar') route(true); else location.hash='#/iniciar';
+}
+/* Guarda um retrato da liga terminada (aba "Liga 2026" em Estatísticas) */
+function archiveLeague(champId){
+  if(VIEWER||!S.started) return;
+  try{
+    S.leagueId=S.leagueId||Date.now();
+    const st=calcStandings(), la=leagueAggs(), k=koSetup(st);
+    const nome=id=>dn(getP(id));
+    const snap={
+      id:S.leagueId, at:new Date().toISOString(), champion:nome(champId),
+      standings:st.map(x=>({name:x.name,j:x.j,v:x.v,e:x.e,d:x.d,gp:x.gp,gc:x.gc,sg:x.sg,pts:x.pts})),
+      ko:['sf1','sf2','final'].map(key=>{ const t=key==='final'?k.fin:k[key], m=S.ko[key]||{};
+        return t&&t[0]&&t[1]?{key,h:nome(t[0]),a:nome(t[1]),gh:m.h,ga:m.a,ph:m.ph,pa:m.pa,w:koWinner(key,t)?nome(koWinner(key,t)):''}:null; }).filter(Boolean),
+      games:leagueMatches().map(m=>{ const sc=scoreOf(m.id); return {r:m.r+1,h:nome(m.h),a:nome(m.a),sc}; }),
+      stats:lparts().map(p=>({name:dn(p),n:la[p.id].n,sum:la[p.id].sum,cnt:la[p.id].cnt}))
+    };
+    const i=S.history.findIndex(h=>h.id===snap.id);
+    if(i>=0) S.history[i]=snap; else S.history.push(snap);
+    save();
+  }catch(e){}
+}
+function deleteHistory(id){
+  const h=S.history.find(x=>x.id===id); if(!h) return;
+  if(!confirm('Apagar as estatísticas guardadas desta liga ('+new Date(h.at).toLocaleDateString('pt-BR')+')? Isso não pode ser desfeito.')) return;
+  S.history=S.history.filter(x=>x.id!==id); save();
+  if(!S.history.length) statsTab='liga';
+  route(true);
+}
+function statsHistory(){
+  if(!S.history.length) return '<section class="panel"><p class="muted">Nenhuma liga encerrada ainda. Quando uma liga terminar (final com campeão), as estatísticas ficam guardadas aqui.</p></section>';
+  const av=(h,k)=>{ const sm=h.sum[k], c=h.cnt[k]; return c? sm/c : null; };
+  return [...S.history].reverse().map(h=>{
+    const d=new Date(h.at).toLocaleDateString('pt-BR');
+    const rows=h.stats.map(x=>{
+      const f=k=>{ const v=x.cnt[k]?x.sum[k]/x.cnt[k]:null; return f1(v); };
+      const pas=x.sum.passes?Math.round(x.sum.passesCertos/x.sum.passes*100)+'%':'—';
+      return `<tr><td>${esc(x.name)}</td><td>${x.n}</td><td>${f('posse')}${x.cnt.posse?'%':''}</td><td>${f('chutes')}</td><td>${f('chutesGol')}</td><td>${pas}</td><td>${f('desarmes')}</td><td>${f('defesas')}</td><td>${f('faltas')}</td></tr>`; }).join('');
+    return `<section class="panel">
+      <h2>🏆 Liga 2026 — encerrada em ${d}</h2>
+      <div class="info">Campeão: <strong>${esc(h.champion)}</strong></div>
+      <h3 style="margin:14px 0 6px">Classificação final</h3>
+      <div class="table-wrap"><table><thead><tr><th>#</th><th>Jogador</th><th>J</th><th>V</th><th>E</th><th>D</th><th>GP</th><th>GC</th><th>SG</th><th>Pts</th></tr></thead><tbody>
+      ${h.standings.map((x,i)=>`<tr><td>${i+1}º</td><td>${esc(x.name)}</td><td>${x.j}</td><td>${x.v}</td><td>${x.e}</td><td>${x.d}</td><td>${x.gp}</td><td>${x.gc}</td><td>${x.sg>0?'+':''}${x.sg}</td><td><b>${x.pts}</b></td></tr>`).join('')}
+      </tbody></table></div>
+      ${h.ko.length?`<h3 style="margin:14px 0 6px">Mata-mata</h3>${h.ko.map(m=>`<div class="dh"><span>${m.key==='final'?'Final':'Semifinal'}</span><span><b>${esc(m.h)}</b> ${m.gh??'–'} x ${m.ga??'–'} <b>${esc(m.a)}</b>${m.ph!=null&&m.ph!==''?` (pên. ${m.ph}-${m.pa})`:''} → ${esc(m.w||'—')}</span></div>`).join('')}`:''}
+      <h3 style="margin:14px 0 6px">Estatísticas dos jogadores (médias por jogo)</h3>
+      <div class="table-wrap"><table style="min-width:700px"><thead><tr><th>Jogador</th><th>Jogos c/ resumo</th><th>Posse</th><th>Chutes</th><th>No gol</th><th>Passes certos</th><th>Desarmes</th><th>Defesas</th><th>Faltas</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="buttons"><button class="danger" onclick="deleteHistory(${h.id})">🗑 Apagar estatísticas desta liga</button></div>
+    </section>`;
+  }).join('');
+}
 function resetAll(){
-  if(!confirm('Tem certeza que deseja apagar todos os participantes, logos, imagens e resultados?')) return;
+  const t=prompt('Isto apaga TUDO: participantes, logos, pré-temporada, liga e estatísticas guardadas.\n\nPara confirmar, digite APAGAR:');
+  if(t===null||t.trim().toUpperCase()!=='APAGAR'){ if(t!==null) toast('Cancelado: palavra incorreta.'); return; }
   try{ localStorage.removeItem(KEY); }catch(e){}
   idbClear(); Object.keys(IMG).forEach(k=>delete IMG[k]);
   S=emptyState(); lastChamp=null; toast('Campeonato reiniciado.'); route(true);
@@ -1154,7 +1217,7 @@ function pageLiga(){
       <button class="blue" onclick="saveData()">💾 Salvar campeonato</button>
       <button class="ghost" onclick="exportPublish()">🌐 Gerar arquivo para a galera</button>
       <a class="btn ghost" href="#/iniciar">🎲 Sorteio e times</a>
-      <button class="danger" onclick="resetAll()">🔄 Reiniciar campeonato</button>
+      <button class="danger" onclick="resetLeague()">🔄 Reiniciar liga</button>
     </div>
     <div id="status" class="status">Os resultados são salvos automaticamente a cada alteração.</div>
   </section>
@@ -1250,6 +1313,7 @@ function updateKnockout(st){
     $(key+'win').innerHTML = (key==='final'?'🏆 Campeão: ':'Vencedor: ')+txt;
   });
   const champ=koWinner('final',k.fin);
+  if(champ) archiveLeague(champ);
   if(champ && champ!==lastChamp && currentRoute==='liga'){ lastChamp=champ; showChampion(champ); }
 }
 function refreshDerived(){
@@ -1539,8 +1603,10 @@ function pageStats(){
   const tabs=`<div class="tabs">
     <button class="tab ${statsTab==='liga'?'active':'ghost'}" onclick="setStatsTab('liga')">🏆 Estatísticas da Liga</button>
     <button class="tab ${statsTab==='pre'?'active':'ghost'}" onclick="setStatsTab('pre')">📊 Estatísticas de Pré-temporada</button>
+    ${S.history.length?`<button class="tab ${statsTab==='hist'?'active':'ghost'}" onclick="setStatsTab('hist')">📚 Liga 2026</button>`:''}
   </div>`;
-  return tabs+(statsTab==='pre'?statsPre():statsLeague());
+  if(statsTab==='hist'&&!S.history.length) statsTab='liga';
+  return tabs+(statsTab==='pre'?statsPre():statsTab==='hist'?statsHistory():statsLeague());
 }
 function preList(){ S.pg=S.pg||[]; return S.pg.filter(k=>IMG[k]); }
 function preSideOf(e,id){ return !e?null:(e.l===id?'h':(e.r===id?'a':null)); }
