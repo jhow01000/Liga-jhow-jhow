@@ -1913,6 +1913,7 @@ function backupPanel(){
     <div class="info">Os dados da liga ficam <strong>só neste navegador</strong>. Faça backup de vez em quando e, para a galera acompanhar pelo link, gere o arquivo de publicação.</div>
     <div class="buttons" style="margin-top:0">
       <button onclick="exportBackup()">💾 Baixar backup completo</button>
+      <button class="ghost" onclick="loadPublishedNow()">☁️ Carregar dados do GitHub</button>
       <label class="btn ghost" style="cursor:pointer">📂 Restaurar backup<input type="file" accept="application/json,.json" style="display:none" onchange="importBackup(event)"></label>
       <button class="btn blue" onclick="exportPublish()">🌐 Gerar arquivo para a galera (dados-liga.json)</button>
     </div>
@@ -1937,10 +1938,25 @@ function route(keepScroll){
 window.addEventListener('hashchange',()=>route());
 
 /* Navegador novo no modo admin (sem dados locais): puxa o dados-liga.json publicado como ponto de partida editável */
+/* Navegador sem nada útil (nunca usado ou só com estado vazio salvo após reiniciar) */
+function localEmpty(){
+  return !S.started && !(S.history||[]).length && !(S.pg||[]).length && !S.parts.some(p=>(p.name||'').trim());
+}
+async function loadPublishedNow(){
+  if(!confirm('Substituir os dados deste navegador pelos dados publicados no GitHub (dados-liga.json)?')) return;
+  try{
+    const r=await fetch('dados-liga.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) throw 0;
+    const d=await r.json(); if(!validExport(d)) throw 0;
+    idbClear(); Object.keys(IMG).forEach(k=>delete IMG[k]);
+    S=normState(d.state);
+    Object.entries(d.images||{}).forEach(([k,v])=>{ if(v) setImg(k,v); });
+    lastChamp=null; save(); toast('Dados do GitHub carregados.'); route(true);
+  }catch(e){ toast('Não consegui baixar o dados-liga.json.'); }
+}
 async function seedAdminFromPublished(){
   try{
     if(!/^https?:/.test(location.protocol)) return;
-    if(localStorage.getItem(KEY)) return;
+    if(!localEmpty()) return;
     const r=await fetch('dados-liga.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return;
     const d=await r.json(); if(!validExport(d)) return;
     S=normState(d.state);
