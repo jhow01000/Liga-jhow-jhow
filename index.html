@@ -1834,11 +1834,27 @@ function route(keepScroll){
 }
 window.addEventListener('hashchange',()=>route());
 
+/* Navegador novo no modo admin (sem dados locais): puxa o dados-liga.json publicado como ponto de partida editável */
+async function seedAdminFromPublished(){
+  try{
+    if(!/^https?:/.test(location.protocol)) return;
+    if(localStorage.getItem(KEY)) return;
+    const r=await fetch('dados-liga.json?t='+Date.now(),{cache:'no-store'}); if(!r.ok) return;
+    const d=await r.json(); if(!validExport(d)) return;
+    S=normState(d.state);
+    Object.entries(d.images||{}).forEach(([k,v])=>{ if(v) setImg(k,v); });
+    save();
+  }catch(e){}
+}
+
 /* ---------- Inicialização ---------- */
 (async function init(){
   document.getElementById('navLogo').src=LOGO;
   if(await tryViewer()) enterViewer();
-  else { await idbOpen(); await idbLoadAll(); }
+  else {
+    await idbOpen(); await idbLoadAll();
+    await seedAdminFromPublished();
+  }
   route();
 })();
 </script>
