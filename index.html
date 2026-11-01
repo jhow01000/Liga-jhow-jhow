@@ -312,7 +312,11 @@ const KEY = "liga_jhow_jhow_2026_v2";
 // 5 rodadas de ida (3 jogos, todos jogam em toda rodada). A volta repete a ida com mando invertido.
 const N_PARTS = 6;
 const BASE_ROUNDS = [[[0,5],[1,4],[2,3]],[[0,4],[5,3],[1,2]],[[0,3],[4,2],[5,1]],[[0,2],[3,1],[4,5]],[[0,1],[2,5],[3,4]]];
-const TOTAL_GAMES = BASE_ROUNDS.length*2*BASE_ROUNDS[0].length;
+const MIN_PARTS = 5;
+/* Participantes que realmente disputam a liga (depois de iniciada); antes disso, todos os cadastrados */
+function lparts(){ return (S.started && Array.isArray(S.active) && S.active.length) ? S.parts.filter(p=>S.active.includes(p.id)) : S.parts; }
+function totalGames(){ const n=lparts().length; return n*(n-1); }
+function halfRounds(){ return S.fixtures ? S.fixtures.length/2 : 0; }
 
 const STAT_DEFS = [
   {k:'posse', l:'Posse de bola (%)', re:/poss/},
@@ -337,7 +341,7 @@ const STAT_KEYS = STAT_DEFS.map(s=>s.k);
 function emptyState(){
   return {
     parts:Array.from({length:N_PARTS},(_,i)=>({id:'p'+i,name:'',team:'',note:''})),
-    started:false, fixtures:null, scores:{}, ko:{}, md:{}, pre:{}, pg:[], preN:0, pd:{}
+    nPlayers:N_PARTS, sel:null, active:null, started:false, fixtures:null, scores:{}, ko:{}, md:{}, pre:{}, pg:[], preN:0, pd:{}
   };
 }
 // pré-temporada: antes cada participante tinha suas imagens; agora há uma lista única de jogos (esquerda × direita)
@@ -345,6 +349,7 @@ function normState(d){
   const st=Object.assign(emptyState(),d);
   // dados salvos com 5 participantes ganham o 6º vazio, sem perder o que já existe
   st.parts=(d.parts||[]).slice();
+  if(!(st.nPlayers>=MIN_PARTS&&st.nPlayers<=N_PARTS)) st.nPlayers=N_PARTS;
   while(st.parts.length<N_PARTS) st.parts.push({id:'p'+st.parts.length,name:'',team:'',note:''});
   if(!Array.isArray(d.pg)){
     st.pg=[]; st.pd=st.pd||{};
@@ -441,9 +446,11 @@ function viewKey(k){ if(IMG[k]) viewImg(IMG[k]); }
 
 /* ---------- Sorteio ---------- */
 function drawFixtures(){
-  const ids = shuffle(S.parts.map(p=>p.id));
+  const ids = shuffle(S.active.slice());
+  const n = ids.length;
   const order = shuffle(BASE_ROUNDS.map((_,i)=>i));
-  const ida = order.map(ri=>BASE_ROUNDS[ri].map(([a,b])=>{
+  // com 5 participantes, o "6º" da tabela base vira folga da rodada
+  const ida = order.map(ri=>BASE_ROUNDS[ri].filter(([a,b])=>a<n&&b<n).map(([a,b])=>{
     const m=[ids[a],ids[b]]; return Math.random()<.5 ? m : [m[1],m[0]];
   }));
   const volta = ida.map(r=>r.map(([a,b])=>[b,a]));
@@ -469,7 +476,7 @@ function directTie(A,B){
   return pb-pa;
 }
 function calcStandings(){
-  const st = S.parts.map(p=>({id:p.id,name:dn(p),j:0,v:0,e:0,d:0,gp:0,gc:0,sg:0,pts:0}));
+  const st = lparts().map(p=>({id:p.id,name:dn(p),j:0,v:0,e:0,d:0,gp:0,gc:0,sg:0,pts:0}));
   const by = {}; st.forEach(s=>by[s.id]=s);
   leagueMatches().forEach(m=>{
     const sc=scoreOf(m.id); if(!sc) return;
@@ -911,7 +918,7 @@ function pageHome(){
   let live='';
   if(S.started){
     const st=calcStandings(); const played=leagueMatches().filter(m=>scoreOf(m.id)).length;
-    live=`<div class="info">🔴 <strong>Liga em andamento</strong> — ${played} de ${TOTAL_GAMES} jogos disputados${played?` • Líder: <strong>${esc(st[0].name)}</strong> (${st[0].pts} pts)`:''}.</div>`;
+    live=`<div class="info">🔴 <strong>Liga em andamento</strong> — ${played} de ${totalGames()} jogos disputados${played?` • Líder: <strong>${esc(st[0].name)}</strong> (${st[0].pts} pts)`:''}.</div>`;
   }
   return `
   <section class="panel hero">
@@ -926,8 +933,8 @@ function pageHome(){
     <h2>🎮 Sobre a liga</h2>
     <div class="cards">
       <div class="icard"><div class="ic">🕹️</div><h3>O jogo</h3><p>Todas as partidas são disputadas no <span class="game-badge">PES 2019</span></p></div>
-      <div class="icard"><div class="ic">👥</div><h3>Participantes</h3><p>6 jogadores, cada um com seu time e sua logo.</p></div>
-      <div class="icard"><div class="ic">🔁</div><h3>Pontos corridos</h3><p>Ida e volta: 30 jogos em 10 rodadas, todos jogam em todas as rodadas. Vitória 3 pts, empate 1.</p></div>
+      <div class="icard"><div class="ic">👥</div><h3>Participantes</h3><p>5 ou 6 jogadores (você escolhe ao iniciar), cada um com seu time e sua logo.</p></div>
+      <div class="icard"><div class="ic">🔁</div><h3>Pontos corridos</h3><p>Ida e volta: com 6 jogadores são 30 jogos em 10 rodadas; com 5 são 20 jogos em 10 rodadas, com uma folga por rodada. Vitória 3 pts, empate 1.</p></div>
       <div class="icard"><div class="ic">🔥</div><h3>Mata-mata</h3><p>Top 4 avançam. Semifinais 1º×4º e 2º×3º e final em jogo único, com pênaltis se empatar.</p></div>
       <div class="icard"><div class="ic">⚖️</div><h3>Desempate</h3><p>Pontos → confronto direto → saldo de gols → gols marcados → vitórias.</p></div>
       <div class="icard"><div class="ic">📷</div><h3>Resumo das partidas</h3><p>A cada jogo você anexa a imagem do resumo e o site monta as estatísticas dos jogadores.</p></div>
@@ -936,7 +943,7 @@ function pageHome(){
   <section class="panel">
     <h2>🧭 Como funciona</h2>
     <ol class="steps">
-      <li><strong>Iniciar liga:</strong> cadastre os 6 participantes e a logo de cada time.</li>
+      <li><strong>Iniciar liga:</strong> escolha quantos participantes (5 ou 6), quem entra e a logo de cada time.</li>
       <li><strong>Sorteio:</strong> o site sorteia a sequência de rodadas e quem joga em casa.</li>
       <li><strong>Jogos:</strong> preencha o placar e anexe a imagem de resumo de cada partida.</li>
       <li><strong>Estatísticas:</strong> posse, chutes, passes, desarmes e defesas viram ranking dos jogadores.</li>
@@ -988,10 +995,36 @@ async function loadStatus(ev,i){
 }
 function removeStatus(i){ const p=S.parts[i]; setImg('status_'+p.id,null); p.noStatus=true; save(); route(true); }
 
+function selIds(){
+  let sel = Array.isArray(S.sel) ? S.sel : (Array.isArray(S.active) ? S.active : S.parts.filter(p=>(p.name||'').trim()).map(p=>p.id));
+  sel = sel.filter(id=>S.parts.some(p=>p.id===id));
+  return sel.slice(0,S.nPlayers);
+}
+function setN(n){ S.sel = selIds().slice(0,n); S.nPlayers=n; save(); route(true); }
+function toggleSel(id,on){
+  let sel=selIds().filter(x=>x!==id);
+  if(on){ if(sel.length>=S.nPlayers){ toast('Já tem '+S.nPlayers+' selecionados. Desmarque alguém primeiro.'); route(true); return; } sel.push(id); }
+  S.sel=sel; save(); route(true);
+}
+function setupPicker(){
+  const sel=selIds();
+  return `<div class="team-box" style="margin-bottom:14px;text-align:left">
+    <label class="l" style="margin-top:0">1) Quantos participantes vão jogar a liga?</label>
+    <div class="buttons" style="margin:6px 0 0">${[5,6].map(n=>`<button class="${S.nPlayers===n?'':'ghost'}" onclick="setN(${n})">${n} participantes</button>`).join('')}</div>
+    <div class="small" style="margin-top:6px">${S.nPlayers} participantes = ${S.nPlayers*(S.nPlayers-1)} jogos em 10 rodadas${S.nPlayers%2?' (um fica de folga em cada rodada)':''}.</div>
+    <label class="l" style="margin-top:14px">2) Quem entra na liga? <strong>${sel.length} de ${S.nPlayers}</strong> selecionados</label>
+    <div style="display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:4px">${S.parts.map((p,i)=>{
+      const named=(p.name||'').trim();
+      return `<label style="display:flex;align-items:center;gap:6px;cursor:${named?'pointer':'not-allowed'};opacity:${named?1:.5}"><input type="checkbox" ${sel.includes(p.id)?'checked':''} ${named?'':'disabled'} onchange="toggleSel('${p.id}',this.checked)"> ${named?esc(named):'Participante '+(i+1)+' (sem nome)'}</label>`;
+    }).join('')}</div>
+    <div class="small" style="margin-top:6px">Quem não entrar mantém a pré-temporada e as estatísticas individuais, mas fica fora da tabela da liga. Dê nome ao participante abaixo para ele aparecer aqui.</div>
+  </div>`;
+}
+
 function teamBox(i){
   const p=S.parts[i], u=IMG['logo_'+p.id];
   return `<div class="team-box">
-    <div class="small">Participante ${i+1}</div>
+    <div class="small">Participante ${i+1}${(S.started?(S.active||[]):selIds()).includes(p.id)?' • ✅ na liga':''}</div>
     ${u?`<img class="logo-preview" src="${u}" alt="Logo">`:`<div class="logo-preview ph">⚽</div>`}
     <label class="l">Nome do participante</label>
     <input type="text" value="${esc(p.name)}" placeholder="Ex.: Jhow" oninput="setName(${i},this.value)">
@@ -1003,8 +1036,8 @@ function fixturesPreview(){
   if(!S.fixtures) return '';
   return S.fixtures.map((r,ri)=>{
     const inR=new Set(); r.forEach(m=>{inR.add(m[0]);inR.add(m[1]);});
-    const bye=S.parts.find(p=>!inR.has(p.id));
-    return `<div class="round"><div class="round-title">Rodada ${ri+1} — ${ri<5?'IDA':'VOLTA'}</div>
+    const bye=lparts().find(p=>!inR.has(p.id));
+    return `<div class="round"><div class="round-title">Rodada ${ri+1} — ${ri<halfRounds()?'IDA':'VOLTA'}</div>
       ${r.map(m=>`<div class="match" style="padding:10px 16px">
         <div class="mteam home">${lg(m[0],'slogo')}<span class="tname">${nm(m[0])}</span></div>
         <div class="score"><strong>x</strong></div>
@@ -1020,6 +1053,7 @@ function pageSetup(){
     ${S.started
       ? `<div class="info">✅ A liga já foi iniciada. Você pode ajustar nomes e logos abaixo sem perder resultados. Refazer o sorteio <strong>apaga placares e resumos</strong>.</div>`
       : ''}
+    ${setupPicker()}
     <div class="team-config">${S.parts.map((_,i)=>teamBox(i)).join('')}</div>
     <div class="buttons">
       <button onclick="startLeague()">🎲 ${S.started?'Refazer sorteio':'Sortear jogos e iniciar a liga'}</button>
@@ -1033,9 +1067,11 @@ function pageSetup(){
 }
 
 function startLeague(){
-  const names=S.parts.map(p=>(p.name||'').trim());
-  if(names.some(n=>!n)){ toast('Preencha o nome dos '+N_PARTS+' participantes.'); return; }
-  if(new Set(names.map(n=>n.toLowerCase())).size<N_PARTS){ toast('Os nomes precisam ser diferentes.'); return; }
+  const sel=selIds();
+  if(sel.length!==S.nPlayers){ toast('Selecione exatamente '+S.nPlayers+' participantes (tem '+sel.length+').'); return; }
+  const names=sel.map(id=>(getP(id).name||'').trim());
+  if(names.some(n=>!n)){ toast('Todos os selecionados precisam ter nome.'); return; }
+  if(new Set(names.map(n=>n.toLowerCase())).size<names.length){ toast('Os nomes precisam ser diferentes.'); return; }
   if(S.started && !confirm('Refazer o sorteio apaga todos os placares e resumos de partida. Continuar?')) return;
   const box=document.getElementById('drawBox'); box.style.display='block';
   let n=0;
@@ -1046,7 +1082,7 @@ function startLeague(){
 }
 function finishDraw(){
   Object.keys(IMG).filter(k=>k.startsWith('m_')).forEach(k=>setImg(k,null));
-  drawFixtures(); S.started=true; S.scores={}; S.ko={}; S.md={}; lastChamp=null;
+  S.active=selIds(); drawFixtures(); S.started=true; S.scores={}; S.ko={}; S.md={}; lastChamp=null;
   save(); toast('Sorteio feito! Boa liga 🏆'); route(true);
 }
 function resetAll(){
@@ -1081,8 +1117,8 @@ function matchRow(m){
 function leagueHTML(){
   return S.fixtures.map((r,ri)=>{
     const inR=new Set(); r.forEach(m=>{inR.add(m[0]);inR.add(m[1]);});
-    const bye=S.parts.find(p=>!inR.has(p.id));
-    return `<div class="round"><div class="round-title">Rodada ${ri+1} — ${ri<5?'IDA':'VOLTA'}</div>
+    const bye=lparts().find(p=>!inR.has(p.id));
+    return `<div class="round"><div class="round-title">Rodada ${ri+1} — ${ri<halfRounds()?'IDA':'VOLTA'}</div>
       ${r.map((m,mi)=>matchRow({id:`r${ri}m${mi}`,h:m[0],a:m[1]})).join('')}
       ${bye?`<div class="bye">Folga: <strong>${esc(dn(bye))}</strong></div>`:''}</div>`;
   }).join('');
@@ -1187,10 +1223,10 @@ function renderExtra(st){
 function renderHighlights(st){
   const c=document.getElementById('leagueHighlights'), note=document.getElementById('leagueHighlightsNote');
   const played=st.reduce((a,s)=>a+s.j,0)/2;
-  if(played!==TOTAL_GAMES){
+  if(played!==totalGames()){
     const pend=(ic,t)=>`<div class="hl-card pending"><div class="hl-icon">${ic}</div><div><div class="hl-title">${t}</div><div class="hl-value">Aguardando resultados</div></div></div>`;
     c.innerHTML=pend('🏆','Campeão da Liga')+pend('⚽','Mais gols marcados')+pend('🧤','Menos gols sofridos');
-    note.textContent=`A liga está ${played} de ${TOTAL_GAMES} jogos concluídos. Os destaques finais aparecem quando todos os jogos tiverem placar preenchido.`;
+    note.textContent=`A liga está ${played} de ${totalGames()} jogos concluídos. Os destaques finais aparecem quando todos os jogos tiverem placar preenchido.`;
     return;
   }
   const champ=st[0], maxG=Math.max(...st.map(s=>s.gp)), minC=Math.min(...st.map(s=>s.gc));
@@ -1289,7 +1325,7 @@ function pageParts(){
   <section class="panel">
     <h2>👥 Cadastro de participantes</h2>
   </section>
-  ${S.parts.map((p,i)=>{
+  ${lparts().map((p,i)=>{
     const pos=st.findIndex(s=>s.id===p.id), s=st[pos], a=agg[p.id];
     const prec=pct(a.passesCertos,a.passes), chutPrec=pct(a.chutesGol,a.chutes);
     const mini=(v,l)=>`<div class="mini"><b>${v}</b><span>${l}</span></div>`;
@@ -1353,7 +1389,7 @@ function statsLeague(){
     </tbody></table></div>
     <p class="small">Totais somados de todas as partidas; posse é a média por jogo.</p>
   </section>
-  ${(()=>{const la=leagueAggs(); return compareTools('liga',S.parts.map(p=>la[p.id]));})()}`;
+  ${(()=>{const la=leagueAggs(); return compareTools('liga',lparts().map(p=>la[p.id]));})()}`;
 }
 
 
@@ -1409,7 +1445,7 @@ function directGames(A,B){
   leagueMatches().forEach(m=>{
     if(!((m.h===A&&m.a===B)||(m.h===B&&m.a===A))) return;
     const sc=scoreOf(m.id);
-    out.push({id:m.id,t:`Rodada ${m.r+1} — ${m.r<5?'IDA':'VOLTA'}`,h:m.h,a:m.a,sc});
+    out.push({id:m.id,t:`Rodada ${m.r+1} — ${m.r<halfRounds()?'IDA':'VOLTA'}`,h:m.h,a:m.a,sc});
   });
   [['sf1','Semifinal 1'],['sf2','Semifinal 2'],['final','Final']].forEach(([k,n])=>{
     const t=teamsOf(k); if(!t) return;
