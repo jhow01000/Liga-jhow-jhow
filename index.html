@@ -341,7 +341,7 @@ const STAT_KEYS = STAT_DEFS.map(s=>s.k);
 function emptyState(){
   return {
     parts:Array.from({length:N_PARTS},(_,i)=>({id:'p'+i,name:'',team:'',note:''})),
-    history:[], leagueId:null, nPlayers:N_PARTS, sel:null, active:null, started:false, fixtures:null, scores:{}, ko:{}, md:{}, pre:{}, pg:[], preN:0, pd:{}
+    history:[], year:2026, leagueId:null, nPlayers:N_PARTS, sel:null, active:null, started:false, fixtures:null, scores:{}, ko:{}, md:{}, pre:{}, pg:[], preN:0, pd:{}
   };
 }
 // pré-temporada: antes cada participante tinha suas imagens; agora há uma lista única de jogos (esquerda × direita)
@@ -350,6 +350,9 @@ function normState(d){
   // dados salvos com 5 participantes ganham o 6º vazio, sem perder o que já existe
   st.parts=(d.parts||[]).slice();
   if(!Array.isArray(st.history)) st.history=[];
+  st.history.forEach((h,i)=>{ if(!h.year) h.year=2026+i; });
+  if(!st.year){ const cur=st.started&&st.history.find(h=>h.id===st.leagueId);
+    st.year = cur ? cur.year : (st.history.length ? Math.max(...st.history.map(h=>h.year))+1 : 2026); }
   if(!(st.nPlayers>=MIN_PARTS&&st.nPlayers<=N_PARTS)) st.nPlayers=N_PARTS;
   while(st.parts.length<N_PARTS) st.parts.push({id:'p'+st.parts.length,name:'',team:'',note:''});
   if(!Array.isArray(d.pg)){
@@ -440,7 +443,8 @@ function getP(id){ return S.parts.find(p=>p.id===id); }
 function dn(p){ if(!p) return '—'; const n=(p.name||'').trim(); return n || ('Jogador '+String.fromCharCode(65+S.parts.indexOf(p))); }
 function nm(id){ return esc(dn(getP(id))); }
 function lg(id,cls){ const u=IMG['logo_'+id]; return u ? `<img class="${cls}" src="${u}" alt="">` : `<span class="${cls} ph">⚽</span>`; }
-function statusSrc(p){ if(IMG['status_'+p.id]) return IMG['status_'+p.id]; if(p.noStatus) return ''; return /jhow/i.test(p.name||'') ? STATUS_JHOW : ''; }
+function statusKey(p,mode){ mode=mode||partMode; return (mode==='liga'?'statusliga_':'status_')+p.id; }
+function statusSrc(p,mode){ mode=mode||partMode; if(mode==='liga') return IMG[statusKey(p,mode)]||''; if(IMG['status_'+p.id]) return IMG['status_'+p.id]; if(p.noStatus) return ''; return /jhow/i.test(p.name||'') ? STATUS_JHOW : ''; }
 function filled(v){ return v!==''&&v!=null&&!isNaN(+v); }
 function viewImg(src){ const d=document.createElement('div'); d.className='imgview'; d.innerHTML=`<img src="${src}">`; d.onclick=()=>d.remove(); document.body.appendChild(d); }
 function viewKey(k){ if(IMG[k]) viewImg(IMG[k]); }
@@ -989,12 +993,12 @@ function readStatusImage(file){
     r.onerror=rej; r.readAsDataURL(file);
   });
 }
-async function loadStatus(ev,i){
+async function loadStatus(ev,i,mode){
   const f=ev.target.files[0]; if(!f) return;
-  try{ setImg('status_'+S.parts[i].id, await readStatusImage(f)); route(true); }
+  try{ setImg(statusKey(S.parts[i],mode), await readStatusImage(f)); route(true); }
   catch(e){ toast('Não consegui ler essa imagem.'); }
 }
-function removeStatus(i){ const p=S.parts[i]; setImg('status_'+p.id,null); p.noStatus=true; save(); route(true); }
+function removeStatus(i,mode){ mode=mode||partMode; const p=S.parts[i]; setImg(statusKey(p,mode),null); if(mode!=='liga') p.noStatus=true; save(); route(true); }
 
 function selIds(){
   let sel = Array.isArray(S.sel) ? S.sel : (Array.isArray(S.active) ? S.active : S.parts.filter(p=>(p.name||'').trim()).map(p=>p.id));
@@ -1050,7 +1054,7 @@ function fixturesPreview(){
 function pageSetup(){
   return `
   <section class="panel">
-    <h2>🚀 Iniciar a Liga Jhow-Jhow 2026</h2>
+    <h2>🚀 Iniciar a Liga Jhow-Jhow ${S.year}</h2>
     ${S.started
       ? `<div class="info">✅ A liga já foi iniciada. Você pode ajustar nomes e logos abaixo sem perder resultados. Refazer o sorteio <strong>apaga placares e resumos</strong>.</div>`
       : ''}
@@ -1083,6 +1087,7 @@ function startLeague(){
   },90);
 }
 function finishDraw(){
+  if(S.started){ const ended=koWinner('final',koSetup(calcStandings()).fin); if(ended){ archiveLeague(ended); S.year++; } }
   Object.keys(IMG).filter(k=>k.startsWith('m_')).forEach(k=>setImg(k,null));
   S.leagueId=Date.now(); S.active=selIds(); drawFixtures(); S.started=true; S.scores={}; S.ko={}; S.md={}; lastChamp=null;
   save(); toast('Sorteio feito! Boa liga 🏆'); route(true);
@@ -1091,7 +1096,7 @@ function resetLeague(){
   if(!S.started){ toast('A liga ainda não foi iniciada.'); return; }
   if(!confirm('Reiniciar a liga apaga o sorteio, os placares, o mata-mata e os resumos de partida desta liga.\n\nParticipantes, logos e a pré-temporada continuam. Se a liga já terminou, as estatísticas dela ficam guardadas na aba "Liga 2026".\n\nContinuar?')) return;
   const ended=koWinner('final',koSetup(calcStandings()).fin);
-  if(ended) archiveLeague(ended);
+  if(ended){ archiveLeague(ended); S.year++; }
   Object.keys(IMG).filter(k=>k.startsWith('m_')).forEach(k=>setImg(k,null));
   S.started=false; S.fixtures=null; S.scores={}; S.ko={}; S.md={}; S.active=null; S.leagueId=null; S.sel=null;
   lastChamp=null; save(); toast('Liga reiniciada. Participantes e pré-temporada mantidos.');
@@ -1105,7 +1110,7 @@ function archiveLeague(champId){
     const st=calcStandings(), la=leagueAggs(), k=koSetup(st);
     const nome=id=>dn(getP(id));
     const snap={
-      id:S.leagueId, at:new Date().toISOString(), champion:nome(champId),
+      id:S.leagueId, year:S.year, at:new Date().toISOString(), champion:nome(champId),
       standings:st.map(x=>({name:x.name,j:x.j,v:x.v,e:x.e,d:x.d,gp:x.gp,gc:x.gc,sg:x.sg,pts:x.pts})),
       ko:['sf1','sf2','final'].map(key=>{ const t=key==='final'?k.fin:k[key], m=S.ko[key]||{};
         return t&&t[0]&&t[1]?{key,h:nome(t[0]),a:nome(t[1]),gh:m.h,ga:m.a,ph:m.ph,pa:m.pa,w:koWinner(key,t)?nome(koWinner(key,t)):''}:null; }).filter(Boolean),
@@ -1121,31 +1126,51 @@ function deleteHistory(id){
   const h=S.history.find(x=>x.id===id); if(!h) return;
   if(!confirm('Apagar as estatísticas guardadas desta liga ('+new Date(h.at).toLocaleDateString('pt-BR')+')? Isso não pode ser desfeito.')) return;
   S.history=S.history.filter(x=>x.id!==id); save();
-  if(!S.history.length) statsTab='liga';
+  statsTab='pre';
   route(true);
 }
-function statsHistory(){
-  if(!S.history.length) return '<section class="panel"><p class="muted">Nenhuma liga encerrada ainda. Quando uma liga terminar (final com campeão), as estatísticas ficam guardadas aqui.</p></section>';
-  const av=(h,k)=>{ const sm=h.sum[k], c=h.cnt[k]; return c? sm/c : null; };
-  return [...S.history].reverse().map(h=>{
-    const d=new Date(h.at).toLocaleDateString('pt-BR');
-    const rows=h.stats.map(x=>{
-      const f=k=>{ const v=x.cnt[k]?x.sum[k]/x.cnt[k]:null; return f1(v); };
-      const pas=x.sum.passes?Math.round(x.sum.passesCertos/x.sum.passes*100)+'%':'—';
-      return `<tr><td>${esc(x.name)}</td><td>${x.n}</td><td>${f('posse')}${x.cnt.posse?'%':''}</td><td>${f('chutes')}</td><td>${f('chutesGol')}</td><td>${pas}</td><td>${f('desarmes')}</td><td>${f('defesas')}</td><td>${f('faltas')}</td></tr>`; }).join('');
-    return `<section class="panel">
-      <h2>🏆 Liga 2026 — encerrada em ${d}</h2>
+function statsHistory(id){
+  const h=S.history.find(x=>x.id===id);
+  if(!h) return '<section class="panel"><p class="muted">Liga não encontrada.</p></section>';
+  const d=new Date(h.at).toLocaleDateString('pt-BR');
+  const mini=(v,l)=>`<div class="mini"><b>${v}</b><span>${l}</span></div>`;
+  // reconstrói os agregados da liga a partir do retrato guardado (classificação + mata-mata + médias)
+  const parts=[], aggs=[];
+  h.stats.forEach(x=>{
+    const p=S.parts.find(q=>dn(q)===x.name); if(!p) return;
+    const t=h.standings.find(y=>y.name===x.name)||{};
+    const a={n:x.n,pend:0,j:t.j||0,v:t.v||0,e:t.e||0,d:t.d||0,gf:t.gp||0,gc:t.gc||0,pts:t.pts||0,sum:x.sum,cnt:x.cnt};
+    (h.ko||[]).forEach(m=>{
+      if(m.gh===''||m.gh==null||m.ga===''||m.ga==null||(m.h!==x.name&&m.a!==x.name)) return;
+      const gf=m.h===x.name?+m.gh:+m.ga, gc=m.h===x.name?+m.ga:+m.gh;
+      a.j++; a.gf+=gf; a.gc+=gc; if(gf>gc){ a.v++; a.pts+=3; } else if(gf<gc) a.d++; else { a.e++; a.pts++; }
+    });
+    parts.push(p); aggs.push(a);
+  });
+  return `<section class="panel">
+      <h2>🏆 Liga ${h.year} — encerrada em ${d}</h2>
       <div class="info">Campeão: <strong>${esc(h.champion)}</strong></div>
       <h3 style="margin:14px 0 6px">Classificação final</h3>
       <div class="table-wrap"><table><thead><tr><th>#</th><th>Jogador</th><th>J</th><th>V</th><th>E</th><th>D</th><th>GP</th><th>GC</th><th>SG</th><th>Pts</th></tr></thead><tbody>
       ${h.standings.map((x,i)=>`<tr><td>${i+1}º</td><td>${esc(x.name)}</td><td>${x.j}</td><td>${x.v}</td><td>${x.e}</td><td>${x.d}</td><td>${x.gp}</td><td>${x.gc}</td><td>${x.sg>0?'+':''}${x.sg}</td><td><b>${x.pts}</b></td></tr>`).join('')}
       </tbody></table></div>
       ${h.ko.length?`<h3 style="margin:14px 0 6px">Mata-mata</h3>${h.ko.map(m=>`<div class="dh"><span>${m.key==='final'?'Final':'Semifinal'}</span><span><b>${esc(m.h)}</b> ${m.gh??'–'} x ${m.ga??'–'} <b>${esc(m.a)}</b>${m.ph!=null&&m.ph!==''?` (pên. ${m.ph}-${m.pa})`:''} → ${esc(m.w||'—')}</span></div>`).join('')}`:''}
-      <h3 style="margin:14px 0 6px">Estatísticas dos jogadores (médias por jogo)</h3>
-      <div class="table-wrap"><table style="min-width:700px"><thead><tr><th>Jogador</th><th>Jogos c/ resumo</th><th>Posse</th><th>Chutes</th><th>No gol</th><th>Passes certos</th><th>Desarmes</th><th>Defesas</th><th>Faltas</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <div class="buttons"><button class="danger" onclick="deleteHistory(${h.id})">🗑 Apagar estatísticas desta liga</button></div>
-    </section>`;
-  }).join('');
+    </section>
+    <section class="panel">
+      <h2>🏆 Estatísticas da Liga ${h.year}</h2>
+      <p class="muted" style="margin:0 0 14px">Médias por jogo de cada participante na liga (pontos corridos, semifinais e final).</p>
+      ${aggs.some(a=>a.n)?preCmpTable(aggs,parts):'<p class="muted">Sem resumos de partida guardados.</p>'}
+      ${VIEWER?'':`<div class="buttons"><button class="danger" onclick="deleteHistory(${h.id})">🗑 Apagar estatísticas desta liga</button></div>`}
+    </section>
+    ${parts.map((p,k)=>{ const a=aggs[k];
+      return `<section class="panel pcard">
+      ${statusSlot(p,S.parts.indexOf(p),'liga')}
+      <div>
+        <div class="phead">${lg(p.id,'mlogo')}<div><h3 style="font-size:20px">${esc(dn(p))}</h3><div class="small">Liga ${h.year}${p.team?` • ${esc(p.team)}`:''} • ${a.n} jogo(s) com resumo</div></div></div>
+        ${a.n?preGroups().map(g=>`<div class="grp"><div class="grp-t">${g.t}</div><div class="mini-grid">${g.rows.map(r=>mini(preCell(r,a),r.l)).join('')}</div></div>`).join('')
+             :`<p class="muted small" style="margin-top:14px">Ainda sem resumos de partida.</p>`}
+      </div>
+    </section>`;}).join('')}`;
 }
 function resetAll(){
   const t=prompt('Isto apaga TUDO: participantes, logos, pré-temporada, liga e estatísticas guardadas.\n\nPara confirmar, digite APAGAR:');
@@ -1370,29 +1395,68 @@ function closeModal(){
 }
 
 /* --- Participantes --- */
-function statusSlot(p,i){
-  const src=statusSrc(p);
+function statusSlot(p,i,mode){
+  mode=mode||partMode; const src=statusSrc(p,mode);
   return `<div class="status-slot">
     ${src?`<img src="${src}" onclick="viewImg(this.src)" alt="Status de ${esc(dn(p))}">`
          :`<div class="empty">🖼️<br>Espaço para a imagem de status</div>`}
     <div class="slot-btns">
-      <label class="btn blue small" style="cursor:pointer">📎 ${src?'Trocar':'Carregar'} imagem<input type="file" accept="image/*" style="display:none" onchange="loadStatus(event,${i})"></label>
-      ${src?`<button class="ghost small" onclick="removeStatus(${i})">🗑 Remover</button>`:''}
+      <label class="btn blue small" style="cursor:pointer">📎 ${src?'Trocar':'Carregar'} imagem<input type="file" accept="image/*" style="display:none" onchange="loadStatus(event,${i},'${mode}')"></label>
+      ${src?`<button class="ghost small" onclick="removeStatus(${i},'${mode}')">🗑 Remover</button>`:''}
     </div>
   </div>`;
 }
 
 
+let partMode='liga';
+function setPartMode(m){ partMode=m; route(true); }
+// Resumo do participante na liga: pontos corridos + semifinal e final (resultado pelo placar do jogo; pênaltis não mudam V/E/D)
+function partLeagueRow(st,id){
+  const r={...st.find(x=>x.id===id)};
+  const k=koSetup(st);
+  [['sf1',k.sf1],['sf2',k.sf2],['final',k.fin]].forEach(([key,t])=>{
+    if(!t||!t[0]||!t[1]||!t.includes(id)) return;
+    const m=S.ko[key]||{}; if(!filled(m.h)||!filled(m.a)) return;
+    const gf=t[0]===id?+m.h:+m.a, gc=t[0]===id?+m.a:+m.h;
+    r.j++; r.gp+=gf; r.gc+=gc;
+    if(gf>gc){ r.v++; r.pts+=3; } else if(gf<gc) r.d++; else { r.e++; r.pts++; }
+  });
+  r.sg=r.gp-r.gc; return r;
+}
 function pageParts(){
-  const st=calcStandings(), agg=aggStats();
+  const st=calcStandings(), agg=aggStats(), pre=partMode==='pre';
+  const tabs=`<div class="tabs" style="margin:12px 0 0">
+    <button class="tab ${!pre?'active':'ghost'}" onclick="setPartMode('liga')">🏆 Liga ${S.year}</button>
+    <button class="tab ${pre?'active':'ghost'}" onclick="setPartMode('pre')">📊 Pré-liga</button>
+  </div>
+  <p class="muted small" style="margin:8px 0 0">Resumo dos dados de jogo exibido: <strong>${pre?'pré-liga (jogos validados da pré-temporada)':`Liga ${S.year} (pontos corridos, semifinais e final)`}</strong>.</p>`;
   return `
   <section class="panel">
     <h2>👥 Cadastro de participantes</h2>
+    ${tabs}
   </section>
   ${lparts().map((p,i)=>{
-    const pos=st.findIndex(s=>s.id===p.id), s=st[pos], a=agg[p.id];
-    const prec=pct(a.passesCertos,a.passes), chutPrec=pct(a.chutesGol,a.chutes);
+    const pos=st.findIndex(s=>s.id===p.id), s=partLeagueRow(st,p.id), a=agg[p.id], pa=pre?preAgg(p.id):null;
     const mini=(v,l)=>`<div class="mini"><b>${v}</b><span>${l}</span></div>`;
+    let g1, g2;
+    if(pre){
+      const pt=pa.v*3+pa.e, sg=pa.gf-pa.gc;
+      const pp=pct(pa.sum.passesCertos,pa.sum.passes), cp=pct(pa.sum.chutesGol,pa.sum.chutes);
+      g1=`${mini(pa.j,'Jogos')}${mini(pa.v,'Vitórias')}${mini(pa.e,'Empates')}${mini(pa.d,'Derrotas')}
+          ${mini(pa.gf,'Gols pró')}${mini(pa.gc,'Gols contra')}${mini((sg>0?'+':'')+sg,'Saldo')}${mini(pt,'Pontos')}
+          ${mini(pa.j?Math.round(pt/(pa.j*3)*100)+'%':'—','Aproveit.')}`;
+      g2=`${mini(pa.n,'Resumos lidos')}${mini(dash(pAvg(pa,'posse')).replace(/^(.+)$/,m=>m==='—'?m:m+'%'),'Posse média')}${mini(dash(pAvg(pa,'chutes')),'Chutes/jogo')}
+          ${mini(cp==null?'—':cp+'%','Chutes no gol')}${mini(pp==null?'—':pp+'%','Passes certos')}${mini(dash(pAvg(pa,'desarmes')),'Desarmes/jogo')}
+          ${mini(dash(pAvg(pa,'defesas')),'Defesas/jogo')}`;
+    } else {
+      const prec=pct(a.passesCertos,a.passes), chutPrec=pct(a.chutesGol,a.chutes);
+      g1=`${mini(S.started?s.j:0,'Jogos')}${mini(S.started?s.v:0,'Vitórias')}${mini(S.started?s.e:0,'Empates')}${mini(S.started?s.d:0,'Derrotas')}
+          ${mini(S.started?s.gp:0,'Gols pró')}${mini(S.started?s.gc:0,'Gols contra')}${mini(S.started?(s.sg>0?'+':'')+s.sg:0,'Saldo')}${mini(S.started?s.pts:0,'Pontos')}
+          ${mini(S.started&&s.j?Math.round(s.pts/(s.j*3)*100)+'%':'—','Aproveit.')}`;
+      g2=`${mini(a.n,'Resumos lidos')}${mini(a.n?f1(avg(a.posse,a.n))+'%':'—','Posse média')}${mini(f1(avg(a.chutes,a.n)),'Chutes/jogo')}
+          ${mini(chutPrec==null?'—':chutPrec+'%','Chutes no gol')}${mini(prec==null?'—':prec+'%','Passes certos')}${mini(f1(avg(a.desarmes,a.n)),'Desarmes/jogo')}
+          ${mini(f1(avg(a.defesas,a.n)),'Defesas/jogo')}`;
+    }
     return `<section class="panel pcard">
       ${statusSlot(p,i)}
       <div>
@@ -1403,17 +1467,9 @@ function pageParts(){
           <div><label>Logo do time</label><input type="file" accept="image/*" onchange="loadLogo(event,${i})"></div>
           <div><label>Observações</label><input type="text" value="${esc(p.note||'')}" placeholder="Estilo de jogo, formação…" oninput="setField(${i},'note',this.value)"></div>
         </div>
-        <h3 style="margin-top:18px;font-size:15px">📋 Resumo dos dados de jogo</h3>
-        <div class="mini-grid">
-          ${mini(S.started?s.j:0,'Jogos')}${mini(S.started?s.v:0,'Vitórias')}${mini(S.started?s.e:0,'Empates')}${mini(S.started?s.d:0,'Derrotas')}
-          ${mini(S.started?s.gp:0,'Gols pró')}${mini(S.started?s.gc:0,'Gols contra')}${mini(S.started?(s.sg>0?'+':'')+s.sg:0,'Saldo')}${mini(S.started?s.pts:0,'Pontos')}
-          ${mini(S.started&&s.j?Math.round(s.pts/(s.j*3)*100)+'%':'—','Aproveit.')}
-        </div>
-        <div class="mini-grid">
-          ${mini(a.n,'Resumos lidos')}${mini(a.n?f1(avg(a.posse,a.n))+'%':'—','Posse média')}${mini(f1(avg(a.chutes,a.n)),'Chutes/jogo')}
-          ${mini(chutPrec==null?'—':chutPrec+'%','Chutes no gol')}${mini(prec==null?'—':prec+'%','Passes certos')}${mini(f1(avg(a.desarmes,a.n)),'Desarmes/jogo')}
-          ${mini(f1(avg(a.defesas,a.n)),'Defesas/jogo')}
-        </div>
+        <h3 style="margin-top:18px;font-size:15px">📋 Resumo dos dados de jogo — ${pre?'Pré-liga':'Liga '+S.year}</h3>
+        <div class="mini-grid">${g1}</div>
+        <div class="mini-grid">${g2}</div>
       </div>
     </section>`;}).join('')}`;
 }
@@ -1421,39 +1477,26 @@ function pageParts(){
 /* --- Estatísticas --- */
 function statsLeague(){
   if(!S.started) return notStarted();
-  const agg=aggStats();
-  const rows=S.parts.map(p=>({p,a:agg[p.id]})).sort((x,y)=>y.a.n-x.a.n);
-  const withData=rows.filter(r=>r.a.n>0);
-  const total=Object.keys(S.md).filter(m=>hasStats(m)).length;
-  const lead=(title,ic,fn,fmt)=>{
-    if(!withData.length) return '';
-    const best=[...withData].sort((x,y)=>fn(y.a)-fn(x.a))[0];
-    return `<div class="hl-card"><div class="hl-icon">${ic}</div><div><div class="hl-title">${title}</div><div class="hl-value">${esc(dn(best.p))}</div><div class="hl-detail">${fmt(best.a)}</div></div></div>`;
-  };
-  const num=v=>v==null?'—':f1(v);
+  const la=leagueAggs(), parts=lparts(), aggs=parts.map(p=>la[p.id]);
+  const mini=(v,l)=>`<div class="mini"><b>${v}</b><span>${l}</span></div>`;
+  const games=Object.keys(S.md).filter(m=>hasStats(m)&&teamsOf(m)).length;
   return `
   <section class="panel">
-    <h2>📈 Estatísticas dos jogadores</h2>
-    ${withData.length?`<div class="lead-grid">
-      ${lead('Mais posse de bola','⏱️',a=>a.posse/a.n,a=>f1(a.posse/a.n)+'% em média')}
-      ${lead('Mais chutes por jogo','🎯',a=>a.chutes/a.n,a=>f1(a.chutes/a.n)+' por jogo')}
-      ${lead('Melhor passe','🔁',a=>a.passes?a.passesCertos/a.passes:0,a=>(pct(a.passesCertos,a.passes)??'—')+'% de passes certos')}
-      ${lead('Mais desarmes','🛡️',a=>a.desarmes/a.n,a=>f1(a.desarmes/a.n)+' por jogo')}
-      ${lead('Mais defesas','🧤',a=>a.defesas/a.n,a=>f1(a.defesas/a.n)+' por jogo')}
-    </div>`:`<p class="muted">Ainda não há estatísticas. Anexe o resumo de uma partida para começar.</p>`}
-    <div class="table-wrap"><table style="min-width:900px"><thead><tr>
-      <th>#</th><th>Jogador</th><th>Jogos</th><th>Posse %</th><th>Chutes</th><th>No gol</th><th>Passes</th><th>Certos %</th>
-      <th>Cruz.</th><th>Intercep.</th><th>Desarmes</th><th>Defesas</th><th>Faltas</th><th>Escant.</th><th>Imped.</th>
-    </tr></thead><tbody>
-    ${rows.map((r,i)=>{const a=r.a,n=a.n;return `<tr><td>${i+1}º</td><td><div class="standings-team">${lg(r.p.id,'slogo')}<span>${esc(dn(r.p))}</span></div></td>
-      <td>${n}</td><td>${n?f1(a.posse/n):'—'}</td><td>${n?a.chutes:'—'}</td><td>${n?a.chutesGol:'—'}</td><td>${n?a.passes:'—'}</td>
-      <td>${pct(a.passesCertos,a.passes)==null?'—':pct(a.passesCertos,a.passes)}</td>
-      <td>${n?a.cruzamentos:'—'}</td><td>${n?a.interceptacoes:'—'}</td><td>${n?a.desarmes:'—'}</td><td>${n?a.defesas:'—'}</td>
-      <td>${n?a.faltas:'—'}</td><td>${n?a.escanteios:'—'}</td><td>${n?a.impedimentos:'—'}</td></tr>`;}).join('')}
-    </tbody></table></div>
-    <p class="small">Totais somados de todas as partidas; posse é a média por jogo.</p>
+    <h2>🏆 Estatísticas da Liga ${S.year}</h2>
+    <p class="muted" style="margin:0 0 14px">Médias por jogo de cada participante na liga (pontos corridos, semifinais e final), calculadas com os resumos de partida lançados (${games} jogo(s)).</p>
+    ${games?preCmpTable(aggs,parts):'<p class="muted">Ainda não há resumos de partida lançados.</p>'}
   </section>
-  ${(()=>{const la=leagueAggs(); return compareTools('liga',lparts().map(p=>la[p.id]));})()}`;
+  ${compareTools('liga',aggs)}
+  ${parts.map((p,k)=>{
+    const a=aggs[k], i=S.parts.indexOf(p);
+    return `<section class="panel pcard">
+      ${statusSlot(p,i,'liga')}
+      <div>
+        <div class="phead">${lg(p.id,'mlogo')}<div><h3 style="font-size:20px">${esc(dn(p))}</h3><div class="small">Liga ${S.year}${p.team?` • ${esc(p.team)}`:''} • ${a.n} jogo(s) com resumo</div></div></div>
+        ${a.n?preGroups().map(g=>`<div class="grp"><div class="grp-t">${g.t}</div><div class="mini-grid">${g.rows.map(r=>mini(preCell(r,a),r.l)).join('')}</div></div>`).join('')
+             :`<p class="muted small" style="margin-top:14px">Ainda sem resumos de partida.</p>`}
+      </div>
+    </section>`;}).join('')}`;
 }
 
 
@@ -1464,7 +1507,7 @@ function setSel(mode,key,val){ statsSel[mode][key]=val; route(true); }
 function leagueAggs(){
   const st=calcStandings(), by={}; st.forEach(x=>by[x.id]=x);
   const out={};
-  S.parts.forEach(p=>{ const r=by[p.id]||{};
+  S.parts.forEach(p=>{ const r=by[p.id]?partLeagueRow(st,p.id):{};
     out[p.id]={n:0,pend:0,j:r.j||0,v:r.v||0,e:r.e||0,d:r.d||0,gf:r.gp||0,gc:r.gc||0,pts:r.pts||0,sum:{},cnt:{}};
     STAT_KEYS.forEach(k=>{ out[p.id].sum[k]=0; out[p.id].cnt[k]=0; }); });
   Object.keys(S.md||{}).forEach(mid=>{
@@ -1599,14 +1642,19 @@ function compareTools(mode,aggs){
 
 /* --- Estatísticas: abas Liga / Pré-temporada --- */
 function setStatsTab(t){ statsTab=t; route(true); }
+const PRE_YEAR=2026;
+function statsTabList(){
+  const live=S.started?S.leagueId:null;
+  const t=[{id:'pre',label:'📊 Pré-temporada '+PRE_YEAR}];
+  [...S.history].filter(h=>h.id!==live).sort((x,y)=>x.year-y.year).forEach(h=>t.push({id:'h'+h.id,label:'🏆 Liga '+h.year}));
+  if(S.started) t.push({id:'liga',label:'🏆 Liga '+S.year});
+  return t;
+}
 function pageStats(){
-  const tabs=`<div class="tabs">
-    <button class="tab ${statsTab==='liga'?'active':'ghost'}" onclick="setStatsTab('liga')">🏆 Estatísticas da Liga</button>
-    <button class="tab ${statsTab==='pre'?'active':'ghost'}" onclick="setStatsTab('pre')">📊 Estatísticas de Pré-temporada</button>
-    ${S.history.length?`<button class="tab ${statsTab==='hist'?'active':'ghost'}" onclick="setStatsTab('hist')">📚 Liga 2026</button>`:''}
-  </div>`;
-  if(statsTab==='hist'&&!S.history.length) statsTab='liga';
-  return tabs+(statsTab==='pre'?statsPre():statsTab==='hist'?statsHistory():statsLeague());
+  const list=statsTabList();
+  if(!list.some(x=>x.id===statsTab)) statsTab=list[list.length-1].id;
+  const tabs=`<div class="tabs">${list.map(x=>`<button class="tab ${statsTab===x.id?'active':'ghost'}" onclick="setStatsTab('${x.id}')">${x.label}</button>`).join('')}</div>`;
+  return tabs+(statsTab==='pre'?statsPre():statsTab==='liga'?statsLeague():statsHistory(+statsTab.slice(1)));
 }
 function preList(){ S.pg=S.pg||[]; return S.pg.filter(k=>IMG[k]); }
 function preSideOf(e,id){ return !e?null:(e.l===id?'h':(e.r===id?'a':null)); }
@@ -1774,9 +1822,10 @@ function preVal(r,a){
   return r.v(a);
 }
 function preCell(r,a){ if(r.t) return preVal(r,a); const v=preVal(r,a); return v==null?'—':r.f(v); }
-function preCmpTable(aggs){
-  const cols=S.parts.length+1;
-  const head=`<tr><th>Estatística</th>${S.parts.map(p=>`<th><div class="cmp-h">${lg(p.id,'slogo')}<span>${esc(dn(p))}</span></div></th>`).join('')}</tr>`;
+function preCmpTable(aggs,parts){
+  parts=parts||S.parts;
+  const cols=parts.length+1;
+  const head=`<tr><th>Estatística</th>${parts.map(p=>`<th><div class="cmp-h">${lg(p.id,'slogo')}<span>${esc(dn(p))}</span></div></th>`).join('')}</tr>`;
   const body=PRE_ROWS.map(r=>{
     if(r.sec) return `<tr class="sec"><td colspan="${cols}">${r.sec}</td></tr>`;
     let target=null;
@@ -1790,7 +1839,7 @@ function preCmpTable(aggs){
       return `<td class="${best?'best':''}">${preCell(r,a)}${best?'<span class="st"> ★</span>':''}</td>`;}).join('')}</tr>`;
   }).join('');
   return `<div class="table-wrap"><table class="cmp"><thead>${head}</thead><tbody>${body}</tbody></table></div>
-    <p class="small" style="margin-top:8px">★ = melhor valor da linha (em <em>gols contra</em>, <em>faltas</em> e <em>impedimentos</em>, menos é melhor). Todos os valores são médias por jogo, só com jogos validados.</p>`;
+    <p class="small" style="margin-top:8px">★ = melhor valor da linha (em <em>gols contra</em>, <em>faltas</em> e <em>impedimentos</em>, menos é melhor). Todos os valores são médias por jogo, só com jogos ${parts===S.parts?'validados':'com resumo'}.</p>`;
 }
 function preGroups(){
   const g=[]; PRE_ROWS.forEach(r=>{ if(r.sec) g.push({t:r.sec,rows:[]}); else g[g.length-1].rows.push(r); }); return g;
@@ -1811,7 +1860,7 @@ function statsPre(){
     </div>
   </section>`}
   <section class="panel">
-    <h2>📊 Estatísticas de Pré-temporada</h2>
+    <h2>📊 Estatísticas de Pré-temporada ${PRE_YEAR}</h2>
     <p class="muted" style="margin:0 0 14px">Médias por jogo de cada participante na pré-temporada, calculadas com os jogos validados.</p>
     ${games?preCmpTable(aggs):'<p class="muted">Ainda não há jogos validados.</p>'}
   </section>
@@ -1819,7 +1868,7 @@ function statsPre(){
   ${S.parts.map((p,i)=>{
     const a=aggs[i];
     return `<section class="panel pcard">
-      ${statusSlot(p,i)}
+      ${statusSlot(p,i,'pre')}
       <div>
         <div class="phead">${lg(p.id,'mlogo')}<div><h3 style="font-size:20px">${esc(dn(p))}</h3><div class="small">Pré-temporada${p.team?` • ${esc(p.team)}`:''} • ${a.n} jogo(s) validado(s)${a.pend&&!VIEWER?` • ${a.pend} pendente(s)`:''}</div></div></div>
         ${a.n?preGroups().map(g=>`<div class="grp"><div class="grp-t">${g.t}</div><div class="mini-grid">${g.rows.map(r=>mini(preCell(r,a),r.l)).join('')}</div></div>`).join('')
@@ -1839,7 +1888,7 @@ function showChampion(id){
   modal.innerHTML=`<div class="champion-content">
     <button class="close-x" type="button" aria-label="Fechar" title="Fechar (Esc)" onclick="fecharModalCampeao()">&times;</button>
     <div class="champion-main">
-      <div class="champion-league">LIGA JHOW-JHOW</div><div class="champion-year">2026</div>
+      <div class="champion-league">LIGA JHOW-JHOW</div><div class="champion-year">${S.year}</div>
       <div class="champion-title">CAMPEÃO</div>
       ${u?`<img src="${u}" class="champion-logo">`:`<img src="${LOGO}" class="champion-logo">`}
       <div class="champion-name">${nm(id)}</div>
@@ -1865,7 +1914,7 @@ function buildExport(kind){
   const images={};
   Object.keys(IMG).forEach(k=>{
     if(kind==='full') images[k]=IMG[k];
-    else if(/^(logo_|status_)/.test(k)) images[k]=IMG[k];
+    else if(/^(logo_|status_|statusliga_)/.test(k)) images[k]=IMG[k];
     else if(/^pre_/.test(k)) images[k]='data:,';
   });
   return {app:'liga-jhow-jhow',version:2,kind,exportedAt:new Date().toISOString(),state:S,images};
@@ -1929,6 +1978,7 @@ function route(keepScroll){
   currentRoute = ROUTES.hasOwnProperty(h) ? h : '';
   if(VIEWER&&currentRoute==='iniciar') currentRoute='liga';
   const y=window.scrollY;
+  const bs=document.querySelector('.brand span'); if(bs) bs.textContent='Jhow-Jhow '+S.year; document.title='Liga Jhow-Jhow '+S.year;
   document.getElementById('app').innerHTML=ROUTES[currentRoute]();
   document.querySelectorAll('#nav a.link').forEach(a=>a.classList.toggle('active',a.dataset.r===currentRoute));
   if(VIEWER) document.querySelectorAll('#app input,#app select:not(.keep)').forEach(e=>{ e.disabled=true; });
