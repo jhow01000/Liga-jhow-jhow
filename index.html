@@ -305,7 +305,7 @@ div.ocr{font-size:13px;margin-top:8px;min-height:18px;color:var(--gold)}
 <body>
 
 <nav class="nav" id="nav">
-  <a class="brand" href="#/"><img id="navLogo" alt=""><span>Jhow-Jhow 2026</span></a>
+  <a class="brand" href="#/"><img id="navLogo" alt=""></a>
   <a class="link" data-r="" href="#/">🏠 Apresentação</a>
   <a class="link" data-r="iniciar" href="#/iniciar">🚀 Iniciar Liga</a>
   <a class="link" data-r="liga" href="#/liga">🏆 Liga</a>
@@ -329,8 +329,15 @@ const BASE_ROUNDS = [[[0,5],[1,4],[2,3]],[[0,4],[5,3],[1,2]],[[0,3],[4,2],[5,1]]
 const MIN_PARTS = 5;
 /* Participantes que realmente disputam a liga (depois de iniciada); antes disso, todos os cadastrados */
 function lparts(){ return (S.started && Array.isArray(S.active) && S.active.length) ? S.parts.filter(p=>S.active.includes(p.id)) : S.parts; }
-function totalGames(){ const n=lparts().length; return n*(n-1); }
-function halfRounds(){ return S.fixtures ? S.fixtures.length/2 : 0; }
+function turnos(){ return S.turnos===1?1:2; }
+function totalGames(){ const n=lparts().length; return n*(n-1)/(turnos()===1?2:1); }
+function halfRounds(){ return S.fixtures ? (turnos()===1 ? S.fixtures.length : S.fixtures.length/2) : 0; }
+function roundLabel(ri){ return 'Rodada '+(ri+1)+(turnos()===2?' — '+(ri<halfRounds()?'IDA':'VOLTA'):''); }
+function formatText(){
+  return turnos()===1
+    ? 'Só ida: com 6 jogadores são 15 jogos em 5 rodadas; com 5 são 10 jogos em 5 rodadas, com uma folga por rodada.'
+    : 'Ida e volta: com 6 jogadores são 30 jogos em 10 rodadas; com 5 são 20 jogos em 10 rodadas, com uma folga por rodada.';
+}
 
 const STAT_DEFS = [
   {k:'posse', l:'Posse de bola (%)', re:/poss/},
@@ -355,7 +362,7 @@ const STAT_KEYS = STAT_DEFS.map(s=>s.k);
 function emptyState(){
   return {
     parts:Array.from({length:N_PARTS},(_,i)=>({id:'p'+i,name:'',team:'',note:''})),
-    history:[], year:2026, leagueId:null, nPlayers:N_PARTS, sel:null, active:null, started:false, fixtures:null, scores:{}, ko:{}, md:{}, pre:{}, pg:[], preN:0, pd:{}
+    history:[], year:2026, leagueId:null, turnos:2, nPlayers:N_PARTS, sel:null, active:null, started:false, fixtures:null, scores:{}, ko:{}, md:{}, pre:{}, pg:[], preN:0, pd:{}
   };
 }
 // pré-temporada: antes cada participante tinha suas imagens; agora há uma lista única de jogos (esquerda × direita)
@@ -368,6 +375,17 @@ function normState(d){
   if(!st.year){ const cur=st.started&&st.history.find(h=>h.id===st.leagueId);
     st.year = cur ? cur.year : (st.history.length ? Math.max(...st.history.map(h=>h.year))+1 : 2026); }
   if(!(st.nPlayers>=MIN_PARTS&&st.nPlayers<=N_PARTS)) st.nPlayers=N_PARTS;
+  // liga marcada como ida e volta (ou sem formato salvo): se o mata-mata já foi jogado, a ida está completa e a volta nunca foi disputada, era só ida
+  if(d.turnos!==1 && st.started && Array.isArray(st.fixtures) && st.fixtures.length>0 && st.fixtures.length%2===0){
+    const h=st.fixtures.length/2, sc=k=>{ const x=(st.scores||{})[k]; return !!x&&filled(x.h)&&filled(x.a); };
+    let idaOk=true, voltaVazia=true;
+    st.fixtures.forEach((r,ri)=>r.forEach((m,mi)=>{ const k=`r${ri}m${mi}`;
+      if(ri<h){ if(!sc(k)) idaOk=false; }
+      else if(sc(k)||(st.md&&st.md[k]&&st.md[k].stats)||(typeof IMG!=='undefined'&&IMG['m_'+k])) voltaVazia=false; }));
+    const koJogado=Object.keys(st.ko||{}).some(k=>filled((st.ko[k]||{}).h)&&filled((st.ko[k]||{}).a));
+    if(idaOk&&voltaVazia&&koJogado){ st.turnos=1; st.fixtures=st.fixtures.slice(0,h); }
+  }
+  if(st.turnos!==1) st.turnos=2;
   while(st.parts.length<N_PARTS) st.parts.push({id:'p'+st.parts.length,name:'',team:'',note:''});
   if(!Array.isArray(d.pg)){
     st.pg=[]; st.pd=st.pd||{};
@@ -473,7 +491,7 @@ function drawFixtures(){
     const m=[ids[a],ids[b]]; return Math.random()<.5 ? m : [m[1],m[0]];
   }));
   const volta = ida.map(r=>r.map(([a,b])=>[b,a]));
-  S.fixtures = ida.concat(volta);
+  S.fixtures = turnos()===1 ? ida : ida.concat(volta);
 }
 function leagueMatches(){
   const out=[]; if(!S.fixtures) return out;
@@ -934,11 +952,6 @@ async function runOCR(id,kind){
 
 /* ---------- Páginas ---------- */
 function pageHome(){
-  let live='';
-  if(S.started){
-    const st=calcStandings(); const played=leagueMatches().filter(m=>scoreOf(m.id)).length;
-    live=`<div class="info">🔴 <strong>Liga em andamento</strong> — ${played} de ${totalGames()} jogos disputados${played?` • Líder: <strong>${esc(st[0].name)}</strong> (${st[0].pts} pts)`:''}.</div>`;
-  }
   return `
   <section class="panel hero">
     <img class="big" src="${LOGO}" alt="Liga Jhow-Jhow 2026">
@@ -947,13 +960,13 @@ function pageHome(){
 <a class="btn" href="#/liga">🏆 Liga</a><a class="btn ghost" href="#/participantes">👥 Participantes</a><a class="btn ghost" href="#/estatisticas">📈 Estatísticas</a>
     </div>
   </section>
-  ${live}
+  
   <section class="panel">
     <h2>🎮 Sobre a liga</h2>
     <div class="cards">
       <div class="icard"><div class="ic">🕹️</div><h3>O jogo</h3><p>Todas as partidas são disputadas no <span class="game-badge">PES 2019</span></p></div>
       <div class="icard"><div class="ic">👥</div><h3>Participantes</h3><p>5 ou 6 jogadores (você escolhe ao iniciar), cada um com seu time e sua logo.</p></div>
-      <div class="icard"><div class="ic">🔁</div><h3>Pontos corridos</h3><p>Ida e volta: com 6 jogadores são 30 jogos em 10 rodadas; com 5 são 20 jogos em 10 rodadas, com uma folga por rodada. Vitória 3 pts, empate 1.</p></div>
+      <div class="icard"><div class="ic">🔁</div><h3>Pontos corridos</h3><p>${formatText()} Vitória 3 pts, empate 1.</p></div>
       <div class="icard"><div class="ic">🔥</div><h3>Mata-mata</h3><p>Top 4 avançam. Semifinais 1º×4º e 2º×3º e final em jogo único, com pênaltis se empatar.</p></div>
       <div class="icard"><div class="ic">⚖️</div><h3>Desempate</h3><p>Pontos → confronto direto → saldo de gols → gols marcados → vitórias.</p></div>
       <div class="icard"><div class="ic">📷</div><h3>Resumo das partidas</h3><p>A cada jogo você anexa a imagem do resumo e o site monta as estatísticas dos jogadores.</p></div>
@@ -1019,6 +1032,21 @@ function selIds(){
   sel = sel.filter(id=>S.parts.some(p=>p.id===id));
   return sel.slice(0,S.nPlayers);
 }
+function setTurnos(t){
+  if(turnos()===t) return;
+  if(S.started&&S.fixtures){
+    if(t===1){
+      const h=S.fixtures.length/2;
+      const used=S.fixtures.slice(h).some((r,j)=>r.some((m,mi)=>{ const id=`r${h+j}m${mi}`; return scoreOf(id)||hasStats(id)||IMG['m_'+id]; }));
+      if(used){ toast('Já há jogos da volta com placar ou resumo. Apague-os antes de mudar para só ida.'); route(true); return; }
+      S.fixtures=S.fixtures.slice(0,h);
+      Object.keys(S.scores||{}).forEach(k=>{ const r=/^r(\d+)m/.exec(k); if(r&&+r[1]>=h) delete S.scores[k]; });
+    } else {
+      S.fixtures=S.fixtures.concat(S.fixtures.map(r=>r.map(([a,b])=>[b,a])));
+    }
+  }
+  S.turnos=t; save(); route(true);
+}
 function setN(n){ S.sel = selIds().slice(0,n); S.nPlayers=n; save(); route(true); }
 function toggleSel(id,on){
   let sel=selIds().filter(x=>x!==id);
@@ -1030,7 +1058,9 @@ function setupPicker(){
   return `<div class="team-box" style="margin-bottom:14px;text-align:left">
     <label class="l" style="margin-top:0">1) Quantos participantes vão jogar a liga?</label>
     <div class="buttons" style="margin:6px 0 0">${[5,6].map(n=>`<button class="${S.nPlayers===n?'':'ghost'}" onclick="setN(${n})">${n} participantes</button>`).join('')}</div>
-    <div class="small" style="margin-top:6px">${S.nPlayers} participantes = ${S.nPlayers*(S.nPlayers-1)} jogos em 10 rodadas${S.nPlayers%2?' (um fica de folga em cada rodada)':''}.</div>
+    <label class="l" style="margin-top:14px">Formato dos jogos</label>
+    <div class="buttons" style="margin:6px 0 0"><button class="${turnos()===2?'':'ghost'}" onclick="setTurnos(2)">Ida e volta</button><button class="${turnos()===1?'':'ghost'}" onclick="setTurnos(1)">Só ida</button></div>
+    <div class="small" style="margin-top:6px">${S.nPlayers} participantes = ${S.nPlayers*(S.nPlayers-1)/(turnos()===1?2:1)} jogos em ${turnos()===1?5:10} rodadas${S.nPlayers%2?' (um fica de folga em cada rodada)':''}.</div>
     <label class="l" style="margin-top:14px">2) Quem entra na liga? <strong>${sel.length} de ${S.nPlayers}</strong> selecionados</label>
     <div style="display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:4px">${S.parts.map((p,i)=>{
       const named=(p.name||'').trim();
@@ -1056,7 +1086,7 @@ function fixturesPreview(){
   return S.fixtures.map((r,ri)=>{
     const inR=new Set(); r.forEach(m=>{inR.add(m[0]);inR.add(m[1]);});
     const bye=lparts().find(p=>!inR.has(p.id));
-    return `<div class="round"><div class="round-title">Rodada ${ri+1} — ${ri<halfRounds()?'IDA':'VOLTA'}</div>
+    return `<div class="round"><div class="round-title">${roundLabel(ri)}</div>
       ${r.map(m=>`<div class="match" style="padding:10px 16px">
         <div class="mteam home">${lg(m[0],'slogo')}<span class="tname">${nm(m[0])}</span></div>
         <div class="score"><strong>x</strong></div>
@@ -1221,7 +1251,7 @@ function leagueHTML(){
   return S.fixtures.map((r,ri)=>{
     const inR=new Set(); r.forEach(m=>{inR.add(m[0]);inR.add(m[1]);});
     const bye=lparts().find(p=>!inR.has(p.id));
-    return `<div class="round"><div class="round-title">Rodada ${ri+1} — ${ri<halfRounds()?'IDA':'VOLTA'}</div>
+    return `<div class="round"><div class="round-title">${roundLabel(ri)}</div>
       ${r.map((m,mi)=>matchRow({id:`r${ri}m${mi}`,h:m[0],a:m[1]})).join('')}
       ${bye?`<div class="bye">Folga: <strong>${esc(dn(bye))}</strong></div>`:''}</div>`;
   }).join('');
@@ -1281,7 +1311,7 @@ function pageLiga(){
   </div>
 
   <section class="panel">
-    <h2>⚽ Liga — Ida e Volta</h2>
+    <h2>⚽ Liga — ${turnos()===1?'Só Ida':'Ida e Volta'}</h2>
     <div id="league">${leagueHTML()}</div>
   </section>
 
@@ -1339,7 +1369,7 @@ function renderHighlights(st){
    <div class="hl-card champion"><div class="hl-icon">🏆</div><div><div class="hl-title">Campeão da Liga</div><div class="hl-value">${esc(champ.name)}</div><div class="hl-detail">${champ.pts} pontos • ${champ.v} vitórias</div></div></div>
    <div class="hl-card goals"><div class="hl-icon">⚽</div><div><div class="hl-title">Mais gols marcados</div><div class="hl-value">${sc}</div><div class="hl-detail">${maxG} gol${maxG===1?'':'s'} marcados</div></div></div>
    <div class="hl-card defense"><div class="hl-icon">🧤</div><div><div class="hl-title">Menos gols sofridos</div><div class="hl-value">${df}</div><div class="hl-detail">${minC} gol${minC===1?'':'s'} sofrido${minC===1?'':'s'}</div></div></div>`;
-  note.textContent='🏁 Liga encerrada — os destaques acima foram calculados somente com os resultados da fase de ida e volta.';
+  note.textContent='🏁 Liga encerrada — os destaques acima foram calculados somente com os resultados da fase de pontos corridos.';
 }
 function slot(id){ return id ? `${lg(id,'mlogo')}<span>${nm(id)}</span>` : '<span class="tbd">A definir</span>'; }
 function updateKnockout(st){
@@ -1588,7 +1618,7 @@ function directGames(A,B){
   leagueMatches().forEach(m=>{
     if(!((m.h===A&&m.a===B)||(m.h===B&&m.a===A))) return;
     const sc=scoreOf(m.id);
-    out.push({id:m.id,t:`Rodada ${m.r+1} — ${m.r<halfRounds()?'IDA':'VOLTA'}`,h:m.h,a:m.a,sc});
+    out.push({id:m.id,t:roundLabel(m.r),h:m.h,a:m.a,sc});
   });
   [['sf1','Semifinal 1'],['sf2','Semifinal 2'],['final','Final']].forEach(([k,n])=>{
     const t=teamsOf(k); if(!t) return;
@@ -2063,7 +2093,7 @@ function route(keepScroll){
   currentRoute = ROUTES.hasOwnProperty(h) ? h : '';
   if(VIEWER&&currentRoute==='iniciar') currentRoute='liga';
   const y=window.scrollY;
-  const bs=document.querySelector('.brand span'); if(bs) bs.textContent='Jhow-Jhow '+S.year; document.title='Liga Jhow-Jhow '+S.year;
+  document.title='Liga Jhow-Jhow '+S.year;
   document.getElementById('app').innerHTML=ROUTES[currentRoute]();
   document.querySelectorAll('#nav a.link').forEach(a=>a.classList.toggle('active',a.dataset.r===currentRoute));
   if(VIEWER) document.querySelectorAll('#app input:not(.keep),#app select:not(.keep)').forEach(e=>{ e.disabled=true; });
